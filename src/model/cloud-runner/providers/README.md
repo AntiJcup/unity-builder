@@ -1,6 +1,16 @@
 # Provider Loader Dynamic Imports
 
-The provider loader now supports dynamic loading of providers from multiple sources including local file paths, GitHub repositories, and NPM packages.
+The provider loader now supports dynamic loading of providers from multiple sources including local file paths, GitHub
+repositories, and NPM packages.
+
+## What is a Provider?
+
+A provider is a pluggable backend that Cloud Runner uses to run builds and workflows. Examples include AWS, Kubernetes,
+or local execution. Each provider implements the `ProviderInterface`, which defines the common lifecycle methods (setup,
+run, cleanup, garbage collection, etc.).
+
+This abstraction makes Cloud Runner flexible: you can switch execution environments or add your own provider (via npm
+package, GitHub repo, or local path) without changing the rest of your pipeline.
 
 ## Features
 
@@ -37,21 +47,18 @@ const absoluteProvider = await ProviderLoader.loadProvider('/path/to/provider', 
 
 ```typescript
 // Load from GitHub URL
-const githubProvider = await ProviderLoader.loadProvider(
-  'https://github.com/user/my-provider', 
-  buildParameters
-);
+const githubProvider = await ProviderLoader.loadProvider('https://github.com/user/my-provider', buildParameters);
 
 // Load from specific branch
 const branchProvider = await ProviderLoader.loadProvider(
-  'https://github.com/user/my-provider/tree/develop', 
-  buildParameters
+  'https://github.com/user/my-provider/tree/develop',
+  buildParameters,
 );
 
 // Load from specific path in repository
 const pathProvider = await ProviderLoader.loadProvider(
-  'https://github.com/user/my-provider/tree/main/src/providers', 
-  buildParameters
+  'https://github.com/user/my-provider/tree/main/src/providers',
+  buildParameters,
 );
 
 // Shorthand notation
@@ -76,8 +83,20 @@ All providers must implement the `ProviderInterface`:
 ```typescript
 interface ProviderInterface {
   cleanupWorkflow(): Promise<void>;
-  setupWorkflow(buildGuid: string, buildParameters: BuildParameters, branchName: string, defaultSecretsArray: any[]): Promise<void>;
-  runTaskInWorkflow(buildGuid: string, task: string, workingDirectory: string, buildVolumeFolder: string, environmentVariables: any[], secrets: any[]): Promise<string>;
+  setupWorkflow(
+    buildGuid: string,
+    buildParameters: BuildParameters,
+    branchName: string,
+    defaultSecretsArray: any[],
+  ): Promise<void>;
+  runTaskInWorkflow(
+    buildGuid: string,
+    task: string,
+    workingDirectory: string,
+    buildVolumeFolder: string,
+    environmentVariables: any[],
+    secrets: any[],
+  ): Promise<string>;
   garbageCollect(): Promise<void>;
   listResources(): Promise<ProviderResource[]>;
   listWorkflow(): Promise<ProviderWorkflow[]>;
@@ -99,11 +118,23 @@ export default class MyProvider implements ProviderInterface {
     // Cleanup logic
   }
 
-  async setupWorkflow(buildGuid: string, buildParameters: BuildParameters, branchName: string, defaultSecretsArray: any[]): Promise<void> {
+  async setupWorkflow(
+    buildGuid: string,
+    buildParameters: BuildParameters,
+    branchName: string,
+    defaultSecretsArray: any[],
+  ): Promise<void> {
     // Setup logic
   }
 
-  async runTaskInWorkflow(buildGuid: string, task: string, workingDirectory: string, buildVolumeFolder: string, environmentVariables: any[], secrets: any[]): Promise<string> {
+  async runTaskInWorkflow(
+    buildGuid: string,
+    task: string,
+    workingDirectory: string,
+    buildVolumeFolder: string,
+    environmentVariables: any[],
+    secrets: any[],
+  ): Promise<string> {
     // Task execution logic
     return 'Task completed';
   }
@@ -159,6 +190,7 @@ console.log(providers); // ['aws', 'k8s', 'test', 'local-docker', 'local-system'
 ## Supported URL Formats
 
 ### GitHub URLs
+
 - `https://github.com/user/repo`
 - `https://github.com/user/repo.git`
 - `https://github.com/user/repo/tree/branch`
@@ -166,23 +198,27 @@ console.log(providers); // ['aws', 'k8s', 'test', 'local-docker', 'local-system'
 - `git@github.com:user/repo.git`
 
 ### Shorthand GitHub References
+
 - `user/repo`
 - `user/repo@branch`
 - `user/repo@branch/path/to/provider`
 
 ### Local Paths
+
 - `./relative/path`
 - `../relative/path`
 - `/absolute/path`
 - `C:\\path\\to\\provider` (Windows)
 
 ### NPM Packages
+
 - `package-name`
 - `@scope/package-name`
 
 ## Caching
 
-GitHub repositories are automatically cached in the `.provider-cache` directory. The cache key is generated based on the repository owner, name, and branch. This ensures that:
+GitHub repositories are automatically cached in the `.provider-cache` directory. The cache key is generated based on the
+repository owner, name, and branch. This ensures that:
 
 1. Repositories are only cloned once
 2. Updates are checked and applied automatically
@@ -207,7 +243,7 @@ The provider loader can be configured through environment variables:
 
 ## Best Practices
 
-1. **Use specific branches**: Always specify the branch when loading from GitHub
+1. **Use specific branches or versions**: Always specify the branch or specific tag when loading from GitHub
 2. **Implement proper error handling**: Wrap provider loading in try-catch blocks
 3. **Clean up regularly**: Use the cleanup utility to manage cache size
 4. **Test locally first**: Test providers locally before deploying

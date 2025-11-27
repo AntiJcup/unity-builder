@@ -68,13 +68,38 @@ class LocalCloudRunner implements ProviderInterface {
 
     // On Windows, many built-in hooks use POSIX shell syntax. Execute via bash if available.
     if (process.platform === 'win32') {
-      const inline = commands
-        .replace(/"/g, '\\"')
+      // Properly escape the command string for embedding in a double-quoted bash string.
+      // Order matters: backslashes must be escaped first to avoid double-escaping.
+      const escapeForBashDoubleQuotes = (stringValue: string): string => {
+        return stringValue
+          .replace(/\\/g, '\\\\') // Escape backslashes first
+          .replace(/\$/g, '\\$') // Escape dollar signs to prevent variable expansion
+          .replace(/`/g, '\\`') // Escape backticks to prevent command substitution
+          .replace(/"/g, '\\"'); // Escape double quotes
+      };
+
+      // Split commands by newlines and escape each line
+      const lines = commands
         .replace(/\r/g, '')
         .split('\n')
         .filter((x) => x.trim().length > 0)
-        .join(' ; ');
+        .map((line) => escapeForBashDoubleQuotes(line));
+
+      // Join with semicolons, but don't add semicolon after control flow keywords
+      // Control flow keywords that shouldn't be followed by semicolons: then, else, do, fi, done, esac
+      const controlFlowKeywords = /\b(then|else|do|fi|done|esac)\s*$/;
+      const inline = lines
+        .map((line, index) => {
+          // Don't add semicolon if this line ends with a control flow keyword
+          if (controlFlowKeywords.test(line.trim()) || index === lines.length - 1) {
+            return line;
+          }
+
+          return `${line} ;`;
+        })
+        .join(' ');
       const bashWrapped = `bash -lc "${inline}"`;
+
       return await CloudRunnerSystem.Run(bashWrapped);
     }
 

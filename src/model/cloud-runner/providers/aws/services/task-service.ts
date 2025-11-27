@@ -3,8 +3,11 @@ import {
   DescribeStacksCommand,
   ListStacksCommand,
 } from '@aws-sdk/client-cloudformation';
+import type { ListStacksCommandOutput } from '@aws-sdk/client-cloudformation';
 import { DescribeLogGroupsCommand } from '@aws-sdk/client-cloudwatch-logs';
+import type { DescribeLogGroupsCommandInput, DescribeLogGroupsCommandOutput } from '@aws-sdk/client-cloudwatch-logs';
 import { DescribeTasksCommand, ListClustersCommand, ListTasksCommand } from '@aws-sdk/client-ecs';
+import type { DescribeTasksCommandOutput } from '@aws-sdk/client-ecs';
 import { ListObjectsCommand } from '@aws-sdk/client-s3';
 import Input from '../../../../input';
 import CloudRunnerLogger from '../../../services/core/cloud-runner-logger';
@@ -13,6 +16,10 @@ import AwsTaskRunner from '../aws-task-runner';
 import CloudRunner from '../../../cloud-runner';
 import { AwsClientFactory } from '../aws-client-factory';
 import SharedWorkspaceLocking from '../../../services/core/shared-workspace-locking';
+
+type StackSummary = NonNullable<ListStacksCommandOutput['StackSummaries']>[number];
+type LogGroup = NonNullable<DescribeLogGroupsCommandOutput['logGroups']>[number];
+type Task = NonNullable<DescribeTasksCommandOutput['tasks']>[number];
 
 export class TaskService {
   static async watch() {
@@ -26,7 +33,7 @@ export class TaskService {
     return output;
   }
   public static async getCloudFormationJobStacks() {
-    const result: any[] = [];
+    const result: StackSummary[] = [];
     CloudRunnerLogger.log(``);
     CloudRunnerLogger.log(`List Cloud Formation Stacks`);
     process.env.AWS_REGION = Input.region;
@@ -78,7 +85,12 @@ export class TaskService {
     return result;
   }
   public static async getTasks() {
-    const result: { taskElement: any; element: string }[] = [];
+    // Extended Task type to include custom properties added in this method
+    type ExtendedTask = Task & {
+      overrides?: Record<string, unknown>;
+      attachments?: unknown[];
+    };
+    const result: { taskElement: ExtendedTask; element: string }[] = [];
     CloudRunnerLogger.log(``);
     CloudRunnerLogger.log(`List Tasks`);
     process.env.AWS_REGION = Input.region;
@@ -102,13 +114,14 @@ export class TaskService {
           if (taskElement === undefined) {
             continue;
           }
-          taskElement.overrides = {};
-          taskElement.attachments = [];
-          if (taskElement.createdAt === undefined) {
-            CloudRunnerLogger.log(`Skipping ${taskElement.taskDefinitionArn} no createdAt date`);
+          const extendedTask = taskElement as ExtendedTask;
+          extendedTask.overrides = {};
+          extendedTask.attachments = [];
+          if (extendedTask.createdAt === undefined) {
+            CloudRunnerLogger.log(`Skipping ${extendedTask.taskDefinitionArn} no createdAt date`);
             continue;
           }
-          result.push({ taskElement, element });
+          result.push({ taskElement: extendedTask, element });
         }
       }
     }
@@ -149,10 +162,10 @@ export class TaskService {
     }
   }
   public static async getLogGroups() {
-    const result: any[] = [];
+    const result: LogGroup[] = [];
     process.env.AWS_REGION = Input.region;
     const ecs = AwsClientFactory.getCloudWatchLogs();
-    let logStreamInput: any = {
+    let logStreamInput: DescribeLogGroupsCommandInput = {
       /* logGroupNamePrefix: 'game-ci' */
     };
     let logGroupsDescribe = await ecs.send(new DescribeLogGroupsCommand(logStreamInput));
@@ -185,6 +198,7 @@ export class TaskService {
     process.env.AWS_REGION = Input.region;
     if (CloudRunner.buildParameters.storageProvider === 'rclone') {
       const objects = await (SharedWorkspaceLocking as any).listObjects('');
+
       return objects.map((x: string) => ({ Key: x }));
     }
     const s3 = AwsClientFactory.getS3();

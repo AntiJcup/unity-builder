@@ -206,7 +206,7 @@ export class TaskService {
   public static async getLocks(): Promise<Array<{ Key: string }>> {
     process.env.AWS_REGION = Input.region;
     if (CloudRunner.buildParameters.storageProvider === 'rclone') {
-      const objects = await (SharedWorkspaceLocking as { listObjects(prefix: string): Promise<string[]> }).listObjects('');
+      const objects = await (SharedWorkspaceLocking as unknown as { listObjects(prefix: string): Promise<string[]> }).listObjects('');
       return objects.map((x: string) => ({ Key: x }));
     }
     const s3 = AwsClientFactory.getS3();

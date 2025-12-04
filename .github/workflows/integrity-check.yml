@@ -34,4 +34,3 @@ jobs:
     name: Cloud Runner Integrity
     uses: ./.github/workflows/cloud-runner-integrity.yml
     secrets: inherit
-

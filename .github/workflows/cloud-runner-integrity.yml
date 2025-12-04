@@ -10,13 +10,9 @@ on:
         type: string
 
 permissions:
-  checks: write
   contents: read
-  actions: write
-  packages: read
-  pull-requests: write
+  checks: write
   statuses: write
-  id-token: write
 
 env:
   AWS_REGION: eu-west-2

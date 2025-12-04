@@ -4,10 +4,7 @@ import {
   ListStacksCommand,
 } from '@aws-sdk/client-cloudformation';
 import type { StackSummary } from '@aws-sdk/client-cloudformation';
-import {
-  DescribeLogGroupsCommand,
-  DescribeLogGroupsCommandInput,
-} from '@aws-sdk/client-cloudwatch-logs';
+import { DescribeLogGroupsCommand, DescribeLogGroupsCommandInput } from '@aws-sdk/client-cloudwatch-logs';
 import type { LogGroup } from '@aws-sdk/client-cloudwatch-logs';
 import { DescribeTasksCommand, ListClustersCommand, ListTasksCommand } from '@aws-sdk/client-ecs';
 import type { Task } from '@aws-sdk/client-ecs';
@@ -104,9 +101,7 @@ export class TaskService {
       {
         let nextToken: string | undefined;
         do {
-          const taskResponse = await ecs.send(
-            new ListTasksCommand({ cluster: element, nextToken }),
-          );
+          const taskResponse = await ecs.send(new ListTasksCommand({ cluster: element, nextToken }));
           taskArns.push(...(taskResponse.taskArns ?? []));
           nextToken = taskResponse.nextToken;
         } while (nextToken);
@@ -206,7 +201,9 @@ export class TaskService {
   public static async getLocks(): Promise<Array<{ Key: string }>> {
     process.env.AWS_REGION = Input.region;
     if (CloudRunner.buildParameters.storageProvider === 'rclone') {
-      const objects = await (SharedWorkspaceLocking as unknown as { listObjects(prefix: string): Promise<string[]> }).listObjects('');
+      const objects = await (
+        SharedWorkspaceLocking as unknown as { listObjects(prefix: string): Promise<string[]> }
+      ).listObjects('');
       return objects.map((x: string) => ({ Key: x }));
     }
     const s3 = AwsClientFactory.getS3();

@@ -207,7 +207,7 @@ The provider loader can be configured through environment variables:
 
 ## Best Practices
 
-1. **Use specific branches**: Always specify the branch when loading from GitHub
+1. **Use specific branches or versions**: Always specify the branch or specific tag when loading from GitHub
 2. **Implement proper error handling**: Wrap provider loading in try-catch blocks
 3. **Clean up regularly**: Use the cleanup utility to manage cache size
 4. **Test locally first**: Test providers locally before deploying

@@ -48,7 +48,7 @@ jobs:
         if: ${{ matrix.provider == 'k8s' }}
         uses: azure/setup-kubectl@v4
         with:
-          version: 'v1.29.0'
+          version: 'v1.34.1'
       - name: Install k3d
         if: ${{ matrix.provider == 'k8s' }}
         run: |

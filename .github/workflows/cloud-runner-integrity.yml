@@ -18,7 +18,7 @@ env:
   # Commented out: Using LocalStack tests instead of real AWS
   # AWS_REGION: eu-west-2
   # AWS_DEFAULT_REGION: eu-west-2
-  AWS_STACK_NAME: game-ci-team-pipelines  # Still needed for LocalStack S3 bucket creation
+  AWS_STACK_NAME: game-ci-team-pipelines # Still needed for LocalStack S3 bucket creation
   CLOUD_RUNNER_BRANCH: ${{ github.ref }}
   DEBUG: true
   PROJECT_PATH: test-project

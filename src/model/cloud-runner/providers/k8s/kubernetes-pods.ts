@@ -21,18 +21,30 @@ class KubernetesPods {
       const errorDetails: string[] = [];
       errorDetails.push(`Pod: ${podName}`);
       errorDetails.push(`Phase: ${phase}`);
-      
+
       if (conditions.length > 0) {
-        errorDetails.push(`Conditions: ${JSON.stringify(conditions.map(c => ({ type: c.type, status: c.status, reason: c.reason, message: c.message })), undefined, 2)}`);
+        errorDetails.push(
+          `Conditions: ${JSON.stringify(
+            conditions.map((c) => ({ type: c.type, status: c.status, reason: c.reason, message: c.message })),
+            undefined,
+            2,
+          )}`,
+        );
       }
 
       if (containerStatuses.length > 0) {
         containerStatuses.forEach((cs, idx) => {
           if (cs.state?.waiting) {
-            errorDetails.push(`Container ${idx} (${cs.name}) waiting: ${cs.state.waiting.reason} - ${cs.state.waiting.message || ''}`);
+            errorDetails.push(
+              `Container ${idx} (${cs.name}) waiting: ${cs.state.waiting.reason} - ${cs.state.waiting.message || ''}`,
+            );
           }
           if (cs.state?.terminated) {
-            errorDetails.push(`Container ${idx} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${cs.state.terminated.message || ''} (exit code: ${cs.state.terminated.exitCode})`);
+            errorDetails.push(
+              `Container ${idx} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${
+                cs.state.terminated.message || ''
+              } (exit code: ${cs.state.terminated.exitCode})`,
+            );
           }
         });
       }

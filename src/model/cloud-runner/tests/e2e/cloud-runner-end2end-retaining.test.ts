@@ -88,7 +88,9 @@ describe('Cloud Runner Retain Workspace', () => {
         );
         try {
           await CloudRunnerSystem.Run(
-            `rm -rf ./cloud-runner-cache/${path.basename(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute)} || true`,
+            `rm -rf ./cloud-runner-cache/${path.basename(
+              CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
+            )} || true`,
           );
         } catch (error: any) {
           CloudRunnerLogger.log(`Failed to cleanup workspace: ${error.message}`);

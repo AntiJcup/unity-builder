@@ -79,12 +79,43 @@ export class Caching {
         return;
       }
 
-      // Check disk space before creating tar archive
+      // Check disk space before creating tar archive and clean up if needed
+      let diskUsagePercent = 0;
       try {
-        const diskCheckOutput = await CloudRunnerSystem.Run(`df -h . 2>/dev/null || df -h /data 2>/dev/null || true`);
+        const diskCheckOutput = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
         CloudRunnerLogger.log(`Disk space before tar: ${diskCheckOutput}`);
+        // Parse disk usage percentage (e.g., "72G  72G  196M 100%")
+        const usageMatch = diskCheckOutput.match(/(\d+)%/);
+        if (usageMatch) {
+          diskUsagePercent = parseInt(usageMatch[1], 10);
+        }
       } catch (error) {
         // Ignore disk check errors
+      }
+
+      // If disk usage is high (>90%), proactively clean up old cache files
+      if (diskUsagePercent > 90) {
+        CloudRunnerLogger.log(
+          `Disk usage is ${diskUsagePercent}% - cleaning up old cache files before tar operation`,
+        );
+        try {
+          const cacheParent = path.dirname(cacheFolder);
+          if (await fileExists(cacheParent)) {
+            // Remove cache files older than 6 hours (more aggressive than 1 day)
+            await CloudRunnerSystem.Run(
+              `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
+            );
+            // Also try to remove old cache directories
+            await CloudRunnerSystem.Run(
+              `find ${cacheParent} -type d -empty -delete 2>/dev/null || true`,
+            );
+            CloudRunnerLogger.log(`Cleanup completed. Checking disk space again...`);
+            const diskCheckAfter = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
+            CloudRunnerLogger.log(`Disk space after cleanup: ${diskCheckAfter}`);
+          }
+        } catch (cleanupError) {
+          CloudRunnerLogger.log(`Proactive cleanup failed: ${cleanupError}`);
+        }
       }
 
       // Clean up any existing incomplete tar files
@@ -102,24 +133,60 @@ export class Caching {
         // Check if error is due to disk space
         const errorMessage = error?.message || error?.toString() || '';
         if (errorMessage.includes('No space left') || errorMessage.includes('Wrote only')) {
-          CloudRunnerLogger.log(`Disk space error detected. Attempting cleanup...`);
-          // Try to clean up old cache files
+          CloudRunnerLogger.log(`Disk space error detected. Attempting aggressive cleanup...`);
+          // Try to clean up old cache files more aggressively
           try {
             const cacheParent = path.dirname(cacheFolder);
             if (await fileExists(cacheParent)) {
-              // Find and remove old cache entries (keep only the most recent)
+              // Remove cache files older than 1 hour (very aggressive)
               await CloudRunnerSystem.Run(
-                `find ${cacheParent} -name "*.tar*" -type f -mtime +1 -delete 2>/dev/null || true`,
+                `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
+              );
+              // Remove empty cache directories
+              await CloudRunnerSystem.Run(
+                `find ${cacheParent} -type d -empty -delete 2>/dev/null || true`,
+              );
+              // Also try to clean up the entire cache folder if it's getting too large
+              const cacheRoot = path.resolve(cacheParent, '..');
+              if (await fileExists(cacheRoot)) {
+                // Remove cache entries older than 30 minutes
+                await CloudRunnerSystem.Run(
+                  `find ${cacheRoot} -name "*.tar*" -type f -mmin +30 -delete 2>/dev/null || true`,
+                );
+              }
+              CloudRunnerLogger.log(`Aggressive cleanup completed. Retrying tar operation...`);
+              // Retry the tar operation once after cleanup
+              let retrySucceeded = false;
+              try {
+                await CloudRunnerSystem.Run(
+                  `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`,
+                );
+                // If retry succeeds, mark it - we'll continue normally without throwing
+                retrySucceeded = true;
+              } catch (retryError: any) {
+                throw new Error(
+                  `Failed to create cache archive after cleanup. Original error: ${errorMessage}. Retry error: ${retryError?.message || retryError}`,
+                );
+              }
+              // If retry succeeded, don't throw the original error - let execution continue after catch block
+              if (!retrySucceeded) {
+                throw error;
+              }
+              // If we get here, retry succeeded - execution will continue after the catch block
+            } else {
+              throw new Error(
+                `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Cleanup not possible - cache folder missing.`,
               );
             }
-          } catch (cleanupError) {
+          } catch (cleanupError: any) {
             CloudRunnerLogger.log(`Cleanup attempt failed: ${cleanupError}`);
+            throw new Error(
+              `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Cleanup failed: ${cleanupError?.message || cleanupError}`,
+            );
           }
-          throw new Error(
-            `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Please free up disk space and retry.`,
-          );
+        } else {
+          throw error;
         }
-        throw error;
       }
       await CloudRunnerSystem.Run(`du ${cacheArtifactName}.tar${compressionSuffix}`);
       assert(await fileExists(`${cacheArtifactName}.tar${compressionSuffix}`), 'cache archive exists');

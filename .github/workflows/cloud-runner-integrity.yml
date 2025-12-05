@@ -57,13 +57,32 @@ jobs:
       - name: Create k3s cluster (k3d)
         if: ${{ matrix.provider == 'k8s' }}
         run: |
-          k3d cluster create unity-builder --agents 1 --wait
+          # Create cluster with relaxed eviction thresholds to prevent premature evictions
+          k3d cluster create unity-builder \
+            --agents 1 \
+            --k3s-arg '--kubelet-arg=eviction-hard=memory.available<50Mi@agent:0' \
+            --k3s-arg '--kubelet-arg=eviction-soft=memory.available<100Mi@agent:0' \
+            --wait
           kubectl config current-context | cat
       - name: Verify cluster readiness
         if: ${{ matrix.provider == 'k8s' }}
         run: |
           for i in {1..60}; do kubectl get nodes && break || sleep 5; done
           kubectl get storageclass
+          # Show node resources
+          kubectl describe nodes | grep -A 5 "Allocated resources" || true
+      - name: Clean up old K8s resources before tests
+        if: ${{ matrix.provider == 'k8s' }}
+        run: |
+          # Clean up any leftover jobs, pods, and PVCs from previous test runs
+          kubectl delete jobs --all --ignore-not-found=true || true
+          kubectl delete pods --all --ignore-not-found=true || true
+          kubectl delete pvc --all --ignore-not-found=true || true
+          kubectl delete secrets --all --ignore-not-found=true || true
+          # Wait a moment for cleanup to complete
+          sleep 5
+          # Show current resource usage
+          kubectl top nodes 2>/dev/null || echo "Metrics server not available"
       - name: Start LocalStack (S3)
         uses: localstack/setup-localstack@v0.2.4
         with:
@@ -98,6 +117,9 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: ${{ matrix.provider == 'k8s' && 'local-path' || '' }}
           PROVIDER_STRATEGY: ${{ matrix.provider }}
+          # Set lower resource requests for tests to prevent evictions in k3d
+          containerCpu: ${{ matrix.provider == 'k8s' && '512' || '' }}
+          containerMemory: ${{ matrix.provider == 'k8s' && '512' || '' }}
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           AWS_S3_ENDPOINT: http://localhost:4566

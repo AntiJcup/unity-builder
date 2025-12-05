@@ -119,7 +119,10 @@ mkdir -p /github/workspace/cloud-runner-cache
 mkdir -p /data/cache
 cp -a /github/workspace/cloud-runner-cache/. ${sharedFolder}
 ${CommandHookService.ApplyHooksToCommands(commands, this.buildParameters)}
-cp -a ${sharedFolder}. /github/workspace/cloud-runner-cache/
+# Only copy cache directory, exclude retained workspaces to avoid running out of disk space
+if [ -d "${sharedFolder}cache" ]; then
+  cp -a ${sharedFolder}cache/. /github/workspace/cloud-runner-cache/cache/ || true
+fi
 `;
     writeFileSync(`${workspace}/${entrypointFilePath}`, fileContents, {
       flag: 'w',

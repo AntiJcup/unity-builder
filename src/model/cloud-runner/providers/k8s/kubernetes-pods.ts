@@ -32,6 +32,9 @@ class KubernetesPods {
         );
       }
 
+      let containerExitCode: number | undefined;
+      let containerSucceeded = false;
+      
       if (containerStatuses.length > 0) {
         containerStatuses.forEach((cs, idx) => {
           if (cs.state?.waiting) {
@@ -40,10 +43,15 @@ class KubernetesPods {
             );
           }
           if (cs.state?.terminated) {
+            const exitCode = cs.state.terminated.exitCode;
+            containerExitCode = exitCode;
+            if (exitCode === 0) {
+              containerSucceeded = true;
+            }
             errorDetails.push(
               `Container ${idx} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${
                 cs.state.terminated.message || ''
-              } (exit code: ${cs.state.terminated.exitCode})`,
+              } (exit code: ${exitCode})`,
             );
           }
         });
@@ -51,6 +59,25 @@ class KubernetesPods {
 
       if (events.length > 0) {
         errorDetails.push(`Recent events: ${JSON.stringify(events.slice(-5), undefined, 2)}`);
+      }
+
+      // Check if only PreStopHook failed but container succeeded
+      const hasPreStopHookFailure = events.some((e) => e.reason === 'FailedPreStopHook');
+      
+      if (containerSucceeded && containerExitCode === 0) {
+        // Container succeeded - PreStopHook failure is non-critical
+        if (hasPreStopHookFailure) {
+          CloudRunnerLogger.logWarning(
+            `Pod ${podName} marked as Failed due to PreStopHook failure, but container exited successfully (exit code 0). This is non-fatal.`,
+          );
+        } else {
+          CloudRunnerLogger.log(
+            `Pod ${podName} container succeeded (exit code 0), but pod phase is Failed. Checking details...`,
+          );
+        }
+        CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
+        // Don't throw error - container succeeded, PreStopHook failure is non-critical
+        return false; // Pod is not running, but we don't treat it as a failure
       }
 
       const errorMessage = `K8s pod failed\n${errorDetails.join('\n')}`;

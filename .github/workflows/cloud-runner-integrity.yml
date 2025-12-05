@@ -85,58 +85,31 @@ jobs:
           # Show available disk space
           df -h
       - run: yarn install --frozen-lockfile
-      - name: Run K8s tests sequentially
-        timeout-minutes: 180
+      - name: Clean up K8s test resources
         run: |
-          # List of K8s tests to run sequentially
-          tests=(
-            "cloud-runner-end2end-caching"
-            "cloud-runner-end2end-retaining"
-            "cloud-runner-hooks"
-          )
-          
-          failed_tests=()
-          
-          for test in "${tests[@]}"; do
-            echo "========================================="
-            echo "Running test: $test"
-            echo "========================================="
-            
-            # Clean up K8s resources before each test
-            echo "Cleaning up K8s resources before test..."
-            kubectl delete jobs --all --ignore-not-found=true --all-namespaces || true
-            kubectl delete pods --all --ignore-not-found=true --all-namespaces || true
-            kubectl delete pvc --all --ignore-not-found=true --all-namespaces || true
-            kubectl delete secrets --all --ignore-not-found=true --all-namespaces || true
-            sleep 3
-            
-            # Clean up disk space before each test
-            rm -rf ./cloud-runner-cache/* || true
-            docker system prune -f || true
-            
-            # Run the test
-            if yarn run test "$test" --detectOpenHandles --forceExit --runInBand; then
-              echo "✓ Test $test passed"
-            else
-              echo "✗ Test $test failed"
-              failed_tests+=("$test")
-            fi
-            
-            echo ""
-          done
-          
-          # Report results
-          if [ ${#failed_tests[@]} -eq 0 ]; then
-            echo "========================================="
-            echo "All tests passed!"
-            echo "========================================="
-            exit 0
-          else
-            echo "========================================="
-            echo "Failed tests: ${failed_tests[*]}"
-            echo "========================================="
-            exit 1
-          fi
+          # Clean up K8s resources before each test (only test resources, not system pods)
+          echo "Cleaning up K8s test resources..."
+          # Only clean up resources in default namespace and resources matching our test patterns
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          # Delete completed/failed pods in default namespace (not system pods)
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Only delete secrets that match our naming pattern (build-credentials-*)
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          # Clean up disk space
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+      - name: Run cloud-runner-end2end-caching test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -148,6 +121,86 @@ jobs:
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
           # Set lower resource requests for tests to prevent evictions in k3d
+          containerCpu: '512'
+          containerMemory: '512'
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up K8s test resources
+        run: |
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+      - name: Run cloud-runner-end2end-retaining test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: k8s
+          containerCpu: '512'
+          containerMemory: '512'
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up K8s test resources
+        run: |
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+      - name: Run cloud-runner-hooks test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: k8s
           containerCpu: '512'
           containerMemory: '512'
           AWS_ACCESS_KEY_ID: test
@@ -188,58 +241,230 @@ jobs:
           # Show available disk space
           df -h
       - run: yarn install --frozen-lockfile
-      - name: Run LocalStack tests sequentially
-        timeout-minutes: 300
+      - name: Clean up disk space
         run: |
-          # List of LocalStack tests to run sequentially
-          tests=(
-            "cloud-runner-end2end-locking"
-            "cloud-runner-end2end-caching"
-            "cloud-runner-end2end-retaining"
-            "cloud-runner-caching"
-            "cloud-runner-environment"
-            "cloud-runner-image"
-            "cloud-runner-hooks"
-            "cloud-runner-local-persistence"
-            "cloud-runner-locking-core"
-            "cloud-runner-locking-get-locked"
-          )
-          
-          failed_tests=()
-          
-          for test in "${tests[@]}"; do
-            echo "========================================="
-            echo "Running test: $test"
-            echo "========================================="
-            
-            # Clean up disk space before each test
-            rm -rf ./cloud-runner-cache/* || true
-            docker system prune -f || true
-            df -h
-            
-            # Run the test
-            if yarn run test "$test" --detectOpenHandles --forceExit --runInBand; then
-              echo "✓ Test $test passed"
-            else
-              echo "✗ Test $test failed"
-              failed_tests+=("$test")
-            fi
-            
-            echo ""
-          done
-          
-          # Report results
-          if [ ${#failed_tests[@]} -eq 0 ]; then
-            echo "========================================="
-            echo "All tests passed!"
-            echo "========================================="
-            exit 0
-          else
-            echo "========================================="
-            echo "Failed tests: ${failed_tests[*]}"
-            echo "========================================="
-            exit 1
-          fi
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-end2end-locking test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-locking" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-end2end-caching test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-end2end-retaining test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-caching test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-caching" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-environment test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-image test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-hooks test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-local-persistence test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-local-persistence" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-locking-core test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-locking-core" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-locking-get-locked test
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-locking-get-locked" --detectOpenHandles --forceExit --runInBand
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}

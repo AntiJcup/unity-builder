@@ -61,6 +61,7 @@ class KubernetesJobSpecFactory {
       backoffLimit: 0,
       template: {
         spec: {
+          terminationGracePeriodSeconds: 90, // Give PreStopHook (60s sleep) time to complete
           volumes: [
             {
               name: 'build-mount',

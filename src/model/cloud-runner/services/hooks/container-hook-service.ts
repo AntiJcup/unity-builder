@@ -334,6 +334,10 @@ export class ContainerHookService {
       if (step.image === undefined) {
         step.image = `ubuntu`;
       }
+      // Ensure allowFailure defaults to false if not explicitly set
+      if (step.allowFailure === undefined) {
+        step.allowFailure = false;
+      }
     }
     if (object === undefined) {
       throw new Error(`Failed to parse ${steps}`);

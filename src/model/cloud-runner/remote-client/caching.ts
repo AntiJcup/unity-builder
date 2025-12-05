@@ -79,9 +79,48 @@ export class Caching {
         return;
       }
 
-      await CloudRunnerSystem.Run(
-        `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`,
-      );
+      // Check disk space before creating tar archive
+      try {
+        const diskCheckOutput = await CloudRunnerSystem.Run(`df -h . 2>/dev/null || df -h /data 2>/dev/null || true`);
+        CloudRunnerLogger.log(`Disk space before tar: ${diskCheckOutput}`);
+      } catch (error) {
+        // Ignore disk check errors
+      }
+
+      // Clean up any existing incomplete tar files
+      try {
+        await CloudRunnerSystem.Run(`rm -f ${cacheArtifactName}.tar${compressionSuffix} 2>/dev/null || true`);
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+
+      try {
+        await CloudRunnerSystem.Run(
+          `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`,
+        );
+      } catch (error: any) {
+        // Check if error is due to disk space
+        const errorMessage = error?.message || error?.toString() || '';
+        if (errorMessage.includes('No space left') || errorMessage.includes('Wrote only')) {
+          CloudRunnerLogger.log(`Disk space error detected. Attempting cleanup...`);
+          // Try to clean up old cache files
+          try {
+            const cacheParent = path.dirname(cacheFolder);
+            if (await fileExists(cacheParent)) {
+              // Find and remove old cache entries (keep only the most recent)
+              await CloudRunnerSystem.Run(
+                `find ${cacheParent} -name "*.tar*" -type f -mtime +1 -delete 2>/dev/null || true`,
+              );
+            }
+          } catch (cleanupError) {
+            CloudRunnerLogger.log(`Cleanup attempt failed: ${cleanupError}`);
+          }
+          throw new Error(
+            `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Please free up disk space and retry.`,
+          );
+        }
+        throw error;
+      }
       await CloudRunnerSystem.Run(`du ${cacheArtifactName}.tar${compressionSuffix}`);
       assert(await fileExists(`${cacheArtifactName}.tar${compressionSuffix}`), 'cache archive exists');
       assert(await fileExists(path.basename(sourceFolder)), 'source folder exists');

@@ -63,7 +63,10 @@ class KubernetesPods {
 
       // Check if only PreStopHook failed but container succeeded
       const hasPreStopHookFailure = events.some((e) => e.reason === 'FailedPreStopHook');
+      const wasKilled = events.some((e) => e.reason === 'Killing');
       
+      // If container succeeded (exit code 0), PreStopHook failure is non-critical
+      // Also check if pod was killed but container might have succeeded
       if (containerSucceeded && containerExitCode === 0) {
         // Container succeeded - PreStopHook failure is non-critical
         if (hasPreStopHookFailure) {
@@ -78,6 +81,16 @@ class KubernetesPods {
         CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
         // Don't throw error - container succeeded, PreStopHook failure is non-critical
         return false; // Pod is not running, but we don't treat it as a failure
+      }
+      
+      // If pod was killed and we have PreStopHook failure but no container status yet, wait a bit
+      // The container might have succeeded but status hasn't been updated yet
+      if (wasKilled && hasPreStopHookFailure && containerExitCode === undefined) {
+        CloudRunnerLogger.log(
+          `Pod ${podName} was killed with PreStopHook failure, but container status not yet available. This may be non-fatal if container succeeded.`,
+        );
+        // Still throw error for now, but with more context
+        // The task runner will retry and get the actual container status
       }
 
       const errorMessage = `K8s pod failed\n${errorDetails.join('\n')}`;

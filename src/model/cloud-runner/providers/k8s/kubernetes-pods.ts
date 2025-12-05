@@ -34,7 +34,7 @@ class KubernetesPods {
 
       let containerExitCode: number | undefined;
       let containerSucceeded = false;
-      
+
       if (containerStatuses.length > 0) {
         containerStatuses.forEach((cs, idx) => {
           if (cs.state?.waiting) {
@@ -64,7 +64,7 @@ class KubernetesPods {
       // Check if only PreStopHook failed but container succeeded
       const hasPreStopHookFailure = events.some((e) => e.reason === 'FailedPreStopHook');
       const wasKilled = events.some((e) => e.reason === 'Killing');
-      
+
       // If container succeeded (exit code 0), PreStopHook failure is non-critical
       // Also check if pod was killed but container might have succeeded
       if (containerSucceeded && containerExitCode === 0) {
@@ -82,7 +82,7 @@ class KubernetesPods {
         // Don't throw error - container succeeded, PreStopHook failure is non-critical
         return false; // Pod is not running, but we don't treat it as a failure
       }
-      
+
       // If pod was killed and we have PreStopHook failure but no container status yet, wait a bit
       // The container might have succeeded but status hasn't been updated yet
       if (wasKilled && hasPreStopHookFailure && containerExitCode === undefined) {

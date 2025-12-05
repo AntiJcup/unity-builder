@@ -46,10 +46,12 @@ export class CustomWorkflow {
         } catch (error: any) {
           const allowFailure = step.allowFailure === true;
           const stepName = step.name || step.image || 'unknown';
-          
+
           if (allowFailure) {
             CloudRunnerLogger.logWarning(
-              `Hook container "${stepName}" failed but allowFailure is true. Continuing build. Error: ${error?.message || error}`,
+              `Hook container "${stepName}" failed but allowFailure is true. Continuing build. Error: ${
+                error?.message || error
+              }`,
             );
             // Continue to next step
           } else {

@@ -87,5 +87,19 @@ describe('Cloud Runner Caching', () => {
       expect(build2NotContainsZeroLibraryCacheFilesMessage).toBeTruthy();
       expect(build2NotContainsZeroLFSCacheFilesMessage).toBeTruthy();
     }, 1_000_000_000);
+    afterAll(async () => {
+      // Clean up cache files to prevent disk space issues
+      if (CloudRunnerOptions.providerStrategy === `local-docker` || CloudRunnerOptions.providerStrategy === `aws`) {
+        const cachePath = `./cloud-runner-cache`;
+        if (fs.existsSync(cachePath)) {
+          try {
+            CloudRunnerLogger.log(`Cleaning up cache directory: ${cachePath}`);
+            await CloudRunnerSystem.Run(`rm -rf ${cachePath}/* || true`);
+          } catch (error: any) {
+            CloudRunnerLogger.log(`Failed to cleanup cache: ${error.message}`);
+          }
+        }
+      }
+    });
   }
 });

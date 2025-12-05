@@ -7,7 +7,43 @@ class KubernetesPods {
     const phase = pods[0]?.status?.phase || 'undefined status';
     CloudRunnerLogger.log(`Getting pod status: ${phase}`);
     if (phase === `Failed`) {
-      throw new Error(`K8s pod failed`);
+      const pod = pods[0];
+      const containerStatuses = pod.status?.containerStatuses || [];
+      const conditions = pod.status?.conditions || [];
+      const events = (await kubeClient.listNamespacedEvent(namespace)).body.items
+        .filter((x) => x.involvedObject?.name === podName)
+        .map((x) => ({
+          message: x.message || '',
+          reason: x.reason || '',
+          type: x.type || '',
+        }));
+
+      const errorDetails: string[] = [];
+      errorDetails.push(`Pod: ${podName}`);
+      errorDetails.push(`Phase: ${phase}`);
+      
+      if (conditions.length > 0) {
+        errorDetails.push(`Conditions: ${JSON.stringify(conditions.map(c => ({ type: c.type, status: c.status, reason: c.reason, message: c.message })), undefined, 2)}`);
+      }
+
+      if (containerStatuses.length > 0) {
+        containerStatuses.forEach((cs, idx) => {
+          if (cs.state?.waiting) {
+            errorDetails.push(`Container ${idx} (${cs.name}) waiting: ${cs.state.waiting.reason} - ${cs.state.waiting.message || ''}`);
+          }
+          if (cs.state?.terminated) {
+            errorDetails.push(`Container ${idx} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${cs.state.terminated.message || ''} (exit code: ${cs.state.terminated.exitCode})`);
+          }
+        });
+      }
+
+      if (events.length > 0) {
+        errorDetails.push(`Recent events: ${JSON.stringify(events.slice(-5), undefined, 2)}`);
+      }
+
+      const errorMessage = `K8s pod failed\n${errorDetails.join('\n')}`;
+      CloudRunnerLogger.log(errorMessage);
+      throw new Error(errorMessage);
     }
 
     return running;

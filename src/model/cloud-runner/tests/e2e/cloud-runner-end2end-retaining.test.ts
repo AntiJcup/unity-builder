@@ -86,6 +86,23 @@ describe('Cloud Runner Retain Workspace', () => {
         CloudRunnerLogger.log(
           `Cleaning up ./cloud-runner-cache/${path.basename(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute)}`,
         );
+        try {
+          await CloudRunnerSystem.Run(
+            `rm -rf ./cloud-runner-cache/${path.basename(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute)} || true`,
+          );
+        } catch (error: any) {
+          CloudRunnerLogger.log(`Failed to cleanup workspace: ${error.message}`);
+        }
+      }
+      // Clean up cache files to prevent disk space issues
+      const cachePath = `./cloud-runner-cache`;
+      if (fs.existsSync(cachePath)) {
+        try {
+          CloudRunnerLogger.log(`Cleaning up cache directory: ${cachePath}`);
+          await CloudRunnerSystem.Run(`rm -rf ${cachePath}/* || true`);
+        } catch (error: any) {
+          CloudRunnerLogger.log(`Failed to cleanup cache: ${error.message}`);
+        }
       }
     });
   }

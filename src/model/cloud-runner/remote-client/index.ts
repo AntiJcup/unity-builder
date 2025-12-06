@@ -41,20 +41,26 @@ export class RemoteClient {
       lingeringLine = lines.pop() || '';
 
       for (const element of lines) {
-        if (CloudRunnerOptions.providerStrategy !== 'k8s') {
+        // For K8s, write to both log file and stdout so kubectl logs can capture it
+        if (CloudRunnerOptions.providerStrategy === 'k8s') {
+          fs.appendFileSync(logFile, element);
+          // Write to stdout so kubectl logs can capture it
+          process.stdout.write(`${element}\n`);
           CloudRunnerLogger.log(element);
         } else {
-          fs.appendFileSync(logFile, element);
           CloudRunnerLogger.log(element);
         }
       }
     });
 
     process.stdin.on('end', () => {
-      if (CloudRunnerOptions.providerStrategy !== 'k8s') {
+      if (CloudRunnerOptions.providerStrategy === 'k8s') {
+        if (lingeringLine) {
+          fs.appendFileSync(logFile, lingeringLine);
+          process.stdout.write(`${lingeringLine}\n`);
+        }
         CloudRunnerLogger.log(lingeringLine);
       } else {
-        fs.appendFileSync(logFile, lingeringLine);
         CloudRunnerLogger.log(lingeringLine);
       }
     });
@@ -126,12 +132,12 @@ export class RemoteClient {
     await RemoteClientLogger.handleLogManagementPostJob();
 
     // Ensure success marker is present in logs for tests
-    // Log to both CloudRunnerLogger and stdout to ensure it's captured
+    // For K8s, kubectl logs reads from stdout/stderr, so we must write to stdout
     const successMessage = `Activation successful`;
-    CloudRunnerLogger.log(successMessage);
-    // Also output directly to stdout to ensure it's captured by log streaming
+    // Write to stdout first so kubectl logs can capture it
     process.stdout.write(`${successMessage}\n`);
-    console.log(successMessage);
+    // Also log via CloudRunnerLogger for GitHub Actions
+    CloudRunnerLogger.log(successMessage);
 
     return new Promise((result) => result(``));
   }

@@ -41,6 +41,21 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version | cat
+      - name: Start LocalStack (S3)
+        uses: localstack/setup-localstack@v0.2.4
+        with:
+          install-awslocal: true
+      - name: Configure LocalStack for k3d access
+        run: |
+          # LocalStack should be accessible, but verify and configure if needed
+          # Check if LocalStack is running and accessible
+          curl -s http://localhost:4566/_localstack/health || echo "LocalStack health check failed"
+          # Ensure LocalStack is listening on all interfaces (should be default)
+          echo "LocalStack should be accessible at localhost:4566 and host.k3d.internal:4566"
+      - name: Create S3 bucket for tests (host LocalStack)
+        run: |
+          awslocal s3 mb s3://$AWS_STACK_NAME || true
+          awslocal s3 ls
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
@@ -63,14 +78,9 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
-      - name: Start LocalStack (S3)
-        uses: localstack/setup-localstack@v0.2.4
-        with:
-          install-awslocal: true
-      - name: Create S3 bucket for tests (host LocalStack)
-        run: |
-          awslocal s3 mb s3://$AWS_STACK_NAME || true
-          awslocal s3 ls
+          # Verify LocalStack is accessible from cluster via host.k3d.internal
+          echo "Testing LocalStack connectivity from k3d cluster..."
+          kubectl run test-localstack-connectivity --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- curl -s --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 || echo "Note: LocalStack connectivity test - this is expected to work once LocalStack is fully ready"
       - uses: actions/setup-node@v4
         with:
           node-version: 20

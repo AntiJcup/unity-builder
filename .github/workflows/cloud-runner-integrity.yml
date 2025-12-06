@@ -47,9 +47,10 @@ jobs:
           # Stop any existing LocalStack containers
           docker stop localstack-k3d 2>/dev/null || true
           docker rm localstack-k3d 2>/dev/null || true
-          # Start LocalStack with port exposed, listening on all interfaces
+          # Start LocalStack using host network mode so it's directly accessible
+          # This ensures it's accessible from k3d pods via host.k3d.internal
           docker run -d --name localstack-k3d \
-            -p 0.0.0.0:4566:4566 \
+            --network host \
             -e SERVICES=s3,cloudformation,ecs,kinesis,cloudwatch,logs \
             -e DEBUG=1 \
             -e DOCKER_HOST=unix:///var/run/docker.sock \
@@ -67,6 +68,9 @@ jobs:
           done
           # Verify LocalStack is accessible
           curl -s http://localhost:4566/_localstack/health | head -5 || echo "LocalStack health check"
+          # Show network info
+          echo "LocalStack container network info:"
+          docker inspect localstack-k3d | grep -i network -A 5 || true
       - name: Install awscli-local
         run: |
           pip install awscli-local || pip3 install awscli-local || echo "awslocal installation skipped"
@@ -96,11 +100,23 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
-          # Test LocalStack connectivity from cluster
-          echo "Testing LocalStack connectivity from k3d cluster via host.k3d.internal:4566..."
-          kubectl run test-localstack --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
-            curl -s --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -10 || \
-            echo "Note: If this fails, LocalStack may need additional network configuration"
+          # Get host gateway IP that k3d uses
+          HOST_IP=$(docker inspect k3d-unity-builder-agent-0 | grep -i gateway | head -1 | grep -oE '"Gateway":"[^"]*"' | cut -d'"' -f4 || echo "")
+          if [ -z "$HOST_IP" ]; then
+            # Try alternative method
+            HOST_IP=$(docker network inspect k3d-unity-builder | grep -i gateway | head -1 | grep -oE '"Gateway":"[^"]*"' | cut -d'"' -f4 || echo "")
+          fi
+          echo "Host gateway IP: $HOST_IP"
+          echo "Testing LocalStack from host (should work):"
+          curl -s --max-time 5 http://localhost:4566/_localstack/health | head -5 || echo "Host connectivity failed"
+          echo "Testing LocalStack from k3d cluster via host.k3d.internal:4566..."
+          kubectl run test-localstack-dns --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
+            curl -v --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -15 || echo "DNS-based connectivity test completed"
+          if [ -n "$HOST_IP" ]; then
+            echo "Testing LocalStack from k3d cluster via host IP $HOST_IP:4566..."
+            kubectl run test-localstack-ip --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
+              curl -v --max-time 5 http://$HOST_IP:4566/_localstack/health 2>&1 | head -15 || echo "IP-based connectivity test completed"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 20

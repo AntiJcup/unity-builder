@@ -31,6 +31,11 @@ export class RemoteClient {
     const logFile = Cli.options!['logFile'];
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
+    
+    // For K8s, ensure stdout is unbuffered so messages are captured immediately
+    if (CloudRunnerOptions.providerStrategy === 'k8s') {
+      process.stdout.setDefaultEncoding('utf8');
+    }
 
     let lingeringLine = '';
 
@@ -44,8 +49,12 @@ export class RemoteClient {
         // For K8s, write to both log file and stdout so kubectl logs can capture it
         if (CloudRunnerOptions.providerStrategy === 'k8s') {
           fs.appendFileSync(logFile, element);
-          // Write to stdout so kubectl logs can capture it
+          // Write to stdout so kubectl logs can capture it - ensure newline is included
           process.stdout.write(`${element}\n`);
+          // Force flush if possible
+          if (typeof process.stdout.flush === 'function') {
+            process.stdout.flush();
+          }
           CloudRunnerLogger.log(element);
         } else {
           CloudRunnerLogger.log(element);
@@ -58,6 +67,9 @@ export class RemoteClient {
         if (lingeringLine) {
           fs.appendFileSync(logFile, lingeringLine);
           process.stdout.write(`${lingeringLine}\n`);
+          if (typeof process.stdout.flush === 'function') {
+            process.stdout.flush();
+          }
         }
         CloudRunnerLogger.log(lingeringLine);
       } else {
@@ -133,9 +145,14 @@ export class RemoteClient {
 
     // Ensure success marker is present in logs for tests
     // For K8s, kubectl logs reads from stdout/stderr, so we must write to stdout
+    // Also ensure it's flushed immediately
     const successMessage = `Activation successful`;
     // Write to stdout first so kubectl logs can capture it
     process.stdout.write(`${successMessage}\n`);
+    // Force flush stdout to ensure it's captured
+    if (process.stdout.isTTY === false) {
+      process.stdout.write(''); // Trigger flush
+    }
     // Also log via CloudRunnerLogger for GitHub Actions
     CloudRunnerLogger.log(successMessage);
 

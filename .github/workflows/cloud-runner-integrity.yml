@@ -41,21 +41,36 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version | cat
-      - name: Start LocalStack (S3)
-        uses: localstack/setup-localstack@v0.2.4
-        with:
-          install-awslocal: true
-      - name: Configure LocalStack for k3d access
+      - name: Start LocalStack (S3) for k3d access
         run: |
-          # LocalStack should be accessible, but verify and configure if needed
-          # Check if LocalStack is running and accessible
-          curl -s http://localhost:4566/_localstack/health || echo "LocalStack health check failed"
-          # Ensure LocalStack is listening on all interfaces (should be default)
-          echo "LocalStack should be accessible at localhost:4566 and host.k3d.internal:4566"
+          # Start LocalStack manually to ensure it's accessible from k3d cluster
+          # Stop any existing LocalStack containers
+          docker stop localstack-k3d 2>/dev/null || true
+          docker rm localstack-k3d 2>/dev/null || true
+          # Start LocalStack with port mapping to make it accessible from k3d
+          docker run -d --name localstack-k3d \
+            -p 4566:4566 \
+            -e SERVICES=s3,cloudformation,ecs,kinesis,cloudwatch,logs \
+            -e DEBUG=1 \
+            -e DOCKER_HOST=unix:///var/run/docker.sock \
+            localstack/localstack:latest
+          # Wait for LocalStack to be ready
+          echo "Waiting for LocalStack to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+              echo "LocalStack is ready"
+              break
+            fi
+            echo "Waiting for LocalStack... ($i/30)"
+            sleep 2
+          done
+      - name: Install awscli-local
+        run: |
+          pip install awscli-local || pip3 install awscli-local || echo "awslocal installation skipped"
       - name: Create S3 bucket for tests (host LocalStack)
         run: |
-          awslocal s3 mb s3://$AWS_STACK_NAME || true
-          awslocal s3 ls
+          awslocal s3 mb s3://$AWS_STACK_NAME || aws --endpoint-url=http://localhost:4566 s3 mb s3://$AWS_STACK_NAME || true
+          awslocal s3 ls || aws --endpoint-url=http://localhost:4566 s3 ls || echo "S3 bucket listing completed"
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |

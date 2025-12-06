@@ -189,6 +189,11 @@ export class Caching {
       await CloudRunnerSystem.Run(`du ${cacheArtifactName}.tar${compressionSuffix}`);
       assert(await fileExists(`${cacheArtifactName}.tar${compressionSuffix}`), 'cache archive exists');
       assert(await fileExists(path.basename(sourceFolder)), 'source folder exists');
+      // Ensure the cache folder directory exists before moving the file
+      // (it might have been deleted by cleanup if it was empty)
+      if (!(await fileExists(cacheFolder))) {
+        await CloudRunnerSystem.Run(`mkdir -p ${cacheFolder}`);
+      }
       await CloudRunnerSystem.Run(`mv ${cacheArtifactName}.tar${compressionSuffix} ${cacheFolder}`);
       RemoteClientLogger.log(`moved cache entry ${cacheArtifactName} to ${cacheFolder}`);
       assert(

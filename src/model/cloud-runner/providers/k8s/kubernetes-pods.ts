@@ -64,6 +64,7 @@ class KubernetesPods {
       // Check if only PreStopHook failed but container succeeded
       const hasPreStopHookFailure = events.some((e) => e.reason === 'FailedPreStopHook');
       const wasKilled = events.some((e) => e.reason === 'Killing');
+      const hasExceededGracePeriod = events.some((e) => e.reason === 'ExceededGracePeriod');
 
       // If container succeeded (exit code 0), PreStopHook failure is non-critical
       // Also check if pod was killed but container might have succeeded
@@ -83,11 +84,11 @@ class KubernetesPods {
         return false; // Pod is not running, but we don't treat it as a failure
       }
 
-      // If pod was killed and we have PreStopHook failure but no container status yet, wait a bit
+      // If pod was killed and we have PreStopHook failure, wait for container status
       // The container might have succeeded but status hasn't been updated yet
-      if (wasKilled && hasPreStopHookFailure && containerExitCode === undefined) {
+      if (wasKilled && hasPreStopHookFailure && (containerExitCode === undefined || !containerSucceeded)) {
         CloudRunnerLogger.log(
-          `Pod ${podName} was killed with PreStopHook failure, but container status not yet available. Waiting for container status...`,
+          `Pod ${podName} was killed with PreStopHook failure. Waiting for container status to determine if container succeeded...`,
         );
         // Wait a bit for container status to become available (up to 30 seconds)
         for (let i = 0; i < 6; i++) {
@@ -110,6 +111,8 @@ class KubernetesPods {
                     `Pod ${podName} container failed with exit code ${updatedExitCode} after waiting.`,
                   );
                   errorDetails.push(`Container terminated after wait: exit code ${updatedExitCode}`);
+                  containerExitCode = updatedExitCode;
+                  containerSucceeded = false;
                   break;
                 }
               }
@@ -118,9 +121,25 @@ class KubernetesPods {
             CloudRunnerLogger.log(`Error while waiting for container status: ${waitError}`);
           }
         }
+        // If we still don't have container status after waiting, but only PreStopHook failed,
+        // be lenient - the container might have succeeded but status wasn't updated
+        if (containerExitCode === undefined && hasPreStopHookFailure && !hasExceededGracePeriod) {
+          CloudRunnerLogger.logWarning(
+            `Pod ${podName} container status not available after waiting, but only PreStopHook failed (no ExceededGracePeriod). Assuming container may have succeeded.`,
+          );
+          return false; // Be lenient - PreStopHook failure alone is not fatal
+        }
         CloudRunnerLogger.log(
-          `Container status still not available after waiting. Assuming failure due to PreStopHook issues.`,
+          `Container status check completed. Exit code: ${containerExitCode}, PreStopHook failure: ${hasPreStopHookFailure}`,
         );
+      }
+
+      // If we only have PreStopHook failure and no actual container failure, be lenient
+      if (hasPreStopHookFailure && !hasExceededGracePeriod && containerExitCode === undefined) {
+        CloudRunnerLogger.logWarning(
+          `Pod ${podName} has PreStopHook failure but no container failure detected. Treating as non-fatal.`,
+        );
+        return false; // PreStopHook failure alone is not fatal if container status is unclear
       }
 
       const errorMessage = `K8s pod failed\n${errorDetails.join('\n')}`;

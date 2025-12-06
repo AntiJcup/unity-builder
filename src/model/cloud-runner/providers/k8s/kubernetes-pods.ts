@@ -93,9 +93,9 @@ class KubernetesPods {
         for (let i = 0; i < 6; i++) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
           try {
-            const updatedPod = (
-              await kubeClient.listNamespacedPod(namespace)
-            ).body.items.find((x) => podName === x.metadata?.name);
+            const updatedPod = (await kubeClient.listNamespacedPod(namespace)).body.items.find(
+              (x) => podName === x.metadata?.name,
+            );
             if (updatedPod?.status?.containerStatuses && updatedPod.status.containerStatuses.length > 0) {
               const updatedContainerStatus = updatedPod.status.containerStatuses[0];
               if (updatedContainerStatus.state?.terminated) {
@@ -109,9 +109,7 @@ class KubernetesPods {
                   CloudRunnerLogger.log(
                     `Pod ${podName} container failed with exit code ${updatedExitCode} after waiting.`,
                   );
-                  errorDetails.push(
-                    `Container terminated after wait: exit code ${updatedExitCode}`,
-                  );
+                  errorDetails.push(`Container terminated after wait: exit code ${updatedExitCode}`);
                   break;
                 }
               }

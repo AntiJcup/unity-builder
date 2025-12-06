@@ -66,9 +66,9 @@ describe('Cloud Runner pre-built rclone steps', () => {
           cloudRunnerDebug: true,
         } as unknown as OptionValues;
 
-        const buildParams = await CreateParameters(overrides);
-        const baseImage = new ImageTag(buildParams);
-        const results = await CloudRunner.run(buildParams, baseImage.toString());
+        const buildParameters = await CreateParameters(overrides);
+        const baseImage = new ImageTag(buildParameters);
+        const results = await CloudRunner.run(buildParameters, baseImage.toString());
         CloudRunnerLogger.log(`rclone run succeeded`);
         expect(results.BuildSucceeded).toBe(true);
 

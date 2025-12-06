@@ -53,6 +53,7 @@ export class CustomWorkflow {
                 error?.message || error
               }`,
             );
+
             // Continue to next step
           } else {
             CloudRunnerLogger.log(

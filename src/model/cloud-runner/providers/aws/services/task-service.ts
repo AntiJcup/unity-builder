@@ -204,6 +204,7 @@ export class TaskService {
       const objects = await (
         SharedWorkspaceLocking as unknown as { listObjects(prefix: string): Promise<string[]> }
       ).listObjects('');
+
       return objects.map((x: string) => ({ Key: x }));
     }
     const s3 = AwsClientFactory.getS3();
@@ -213,6 +214,6 @@ export class TaskService {
 
     const results = await s3.send(new ListObjectsV2Command(listRequest));
 
-    return (results.Contents || []).map((obj) => ({ Key: obj.Key || '' }));
+    return (results.Contents || []).map((object) => ({ Key: object.Key || '' }));
   }
 }

@@ -95,7 +95,7 @@ export class BuildAutomationWorkflow implements WorkflowInterface {
 BRANCH="${CloudRunner.buildParameters.cloudRunnerBranch}"
 REPO="${CloudRunnerFolders.unityBuilderRepoUrl}"
 DEST="${CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.builderPathAbsolute)}"
-if [ -n "$(git ls-remote --heads \"$REPO\" \"$BRANCH\" 2>/dev/null)" ]; then
+if [ -n "$(git ls-remote --heads "$REPO" "$BRANCH" 2>/dev/null)" ]; then
   git clone -q -b "$BRANCH" "$REPO" "$DEST"
 else
   echo "Remote branch $BRANCH not found in $REPO; falling back to a known branch"
@@ -185,6 +185,7 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     cp -a "/data/cache/$CACHE_KEY/build/." "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build/" || true
     echo "end of cloud runner job"`;
       }
+
       // prettier-ignore
       return `
     mkdir -p ${`${CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.projectBuildFolderAbsolute)}/build`}

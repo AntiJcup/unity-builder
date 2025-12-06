@@ -22,7 +22,7 @@ class KubernetesJobSpecFactory {
     containerName: string,
     ip: string = '',
   ) {
-    const endpointEnvNames = new Set([
+    const endpointEnvironmentNames = new Set([
       'AWS_S3_ENDPOINT',
       'AWS_ENDPOINT',
       'AWS_CLOUD_FORMATION_ENDPOINT',
@@ -36,7 +36,7 @@ class KubernetesJobSpecFactory {
       let value = x.value;
       if (
         typeof value === 'string' &&
-        endpointEnvNames.has(x.name) &&
+        endpointEnvironmentNames.has(x.name) &&
         (value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'))
       ) {
         // Replace localhost with host.k3d.internal so pods can access host services
@@ -45,6 +45,7 @@ class KubernetesJobSpecFactory {
           .replace('http://localhost', 'http://host.k3d.internal')
           .replace('http://127.0.0.1', 'http://host.k3d.internal');
       }
+
       return { name: x.name, value } as CloudRunnerEnvironmentVariable;
     });
 

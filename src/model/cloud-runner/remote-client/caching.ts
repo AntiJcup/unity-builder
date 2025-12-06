@@ -84,12 +84,13 @@ export class Caching {
       try {
         const diskCheckOutput = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
         CloudRunnerLogger.log(`Disk space before tar: ${diskCheckOutput}`);
+
         // Parse disk usage percentage (e.g., "72G  72G  196M 100%")
         const usageMatch = diskCheckOutput.match(/(\d+)%/);
         if (usageMatch) {
-          diskUsagePercent = parseInt(usageMatch[1], 10);
+          diskUsagePercent = Number.parseInt(usageMatch[1], 10);
         }
-      } catch (error) {
+      } catch {
         // Ignore disk check errors
       }
 
@@ -103,6 +104,7 @@ export class Caching {
             await CloudRunnerSystem.Run(
               `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
             );
+
             // Also try to remove old cache directories
             await CloudRunnerSystem.Run(`find ${cacheParent} -type d -empty -delete 2>/dev/null || true`);
             CloudRunnerLogger.log(`Cleanup completed. Checking disk space again...`);
@@ -117,7 +119,7 @@ export class Caching {
       // Clean up any existing incomplete tar files
       try {
         await CloudRunnerSystem.Run(`rm -f ${cacheArtifactName}.tar${compressionSuffix} 2>/dev/null || true`);
-      } catch (error) {
+      } catch {
         // Ignore cleanup errors
       }
 
@@ -130,6 +132,7 @@ export class Caching {
         const errorMessage = error?.message || error?.toString() || '';
         if (errorMessage.includes('No space left') || errorMessage.includes('Wrote only')) {
           CloudRunnerLogger.log(`Disk space error detected. Attempting aggressive cleanup...`);
+
           // Try to clean up old cache files more aggressively
           try {
             const cacheParent = path.dirname(cacheFolder);
@@ -138,8 +141,10 @@ export class Caching {
               await CloudRunnerSystem.Run(
                 `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
               );
+
               // Remove empty cache directories
               await CloudRunnerSystem.Run(`find ${cacheParent} -type d -empty -delete 2>/dev/null || true`);
+
               // Also try to clean up the entire cache folder if it's getting too large
               const cacheRoot = path.resolve(cacheParent, '..');
               if (await fileExists(cacheRoot)) {
@@ -149,12 +154,14 @@ export class Caching {
                 );
               }
               CloudRunnerLogger.log(`Aggressive cleanup completed. Retrying tar operation...`);
+
               // Retry the tar operation once after cleanup
               let retrySucceeded = false;
               try {
                 await CloudRunnerSystem.Run(
                   `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`,
                 );
+
                 // If retry succeeds, mark it - we'll continue normally without throwing
                 retrySucceeded = true;
               } catch (retryError: any) {
@@ -164,10 +171,12 @@ export class Caching {
                   }`,
                 );
               }
+
               // If retry succeeded, don't throw the original error - let execution continue after catch block
               if (!retrySucceeded) {
                 throw error;
               }
+
               // If we get here, retry succeeded - execution will continue after the catch block
             } else {
               throw new Error(
@@ -189,6 +198,7 @@ export class Caching {
       await CloudRunnerSystem.Run(`du ${cacheArtifactName}.tar${compressionSuffix}`);
       assert(await fileExists(`${cacheArtifactName}.tar${compressionSuffix}`), 'cache archive exists');
       assert(await fileExists(path.basename(sourceFolder)), 'source folder exists');
+
       // Ensure the cache folder directory exists before moving the file
       // (it might have been deleted by cleanup if it was empty)
       if (!(await fileExists(cacheFolder))) {

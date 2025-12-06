@@ -62,25 +62,30 @@ class KubernetesTaskRunner {
               true,
               callback,
             );
+
             // If we successfully got logs, check for end of transmission
             if (FollowLogStreamService.DidReceiveEndOfTransmission) {
               CloudRunnerLogger.log('end of log stream');
               break;
             }
+
             // If we got logs but no end marker, continue trying (might be more logs)
             if (retriesAfterFinish < KubernetesTaskRunner.maxRetry) {
               retriesAfterFinish++;
               continue;
             }
+
             // If we've exhausted retries, break
             break;
           } catch (fallbackError: any) {
             CloudRunnerLogger.log(`Fallback log fetch also failed: ${fallbackError}`);
+
             // If both fail, continue retrying if we haven't exhausted retries
             if (retriesAfterFinish < KubernetesTaskRunner.maxRetry) {
               retriesAfterFinish++;
               continue;
             }
+
             // Only break if we've exhausted all retries
             CloudRunnerLogger.logWarning(
               `Could not fetch any container logs after ${KubernetesTaskRunner.maxRetry} retries`,
@@ -101,6 +106,7 @@ class KubernetesTaskRunner {
         if (!error?.message?.includes('previous terminated container')) {
           throw error;
         }
+
         // For previous container errors, we've already tried fallback, so just break
         CloudRunnerLogger.logWarning(
           `Could not fetch previous container logs after retries, but continuing with available logs`,

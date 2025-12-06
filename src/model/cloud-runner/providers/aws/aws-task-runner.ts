@@ -209,6 +209,7 @@ class AWSTaskRunner {
         const sleepMs = baseBackoffMs + jitterMs;
         CloudRunnerLogger.log(`AWS throttled GetRecords, backing off ${sleepMs}ms (1000 + jitter ${jitterMs})`);
         await new Promise((r) => setTimeout(r, sleepMs));
+
         return { iterator, shouldReadLogs, output, shouldCleanup };
       }
       throw error;

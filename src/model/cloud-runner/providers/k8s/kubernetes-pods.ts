@@ -19,8 +19,7 @@ class KubernetesPods {
         }));
 
       const errorDetails: string[] = [];
-      errorDetails.push(`Pod: ${podName}`);
-      errorDetails.push(`Phase: ${phase}`);
+      errorDetails.push(`Pod: ${podName}`, `Phase: ${phase}`);
 
       if (conditions.length > 0) {
         errorDetails.push(
@@ -36,10 +35,10 @@ class KubernetesPods {
       let containerSucceeded = false;
 
       if (containerStatuses.length > 0) {
-        containerStatuses.forEach((cs, idx) => {
+        for (const [index, cs] of containerStatuses.entries()) {
           if (cs.state?.waiting) {
             errorDetails.push(
-              `Container ${idx} (${cs.name}) waiting: ${cs.state.waiting.reason} - ${cs.state.waiting.message || ''}`,
+              `Container ${index} (${cs.name}) waiting: ${cs.state.waiting.reason} - ${cs.state.waiting.message || ''}`,
             );
           }
           if (cs.state?.terminated) {
@@ -49,12 +48,12 @@ class KubernetesPods {
               containerSucceeded = true;
             }
             errorDetails.push(
-              `Container ${idx} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${
+              `Container ${index} (${cs.name}) terminated: ${cs.state.terminated.reason} - ${
                 cs.state.terminated.message || ''
               } (exit code: ${exitCode})`,
             );
           }
-        });
+        }
       }
 
       if (events.length > 0) {
@@ -80,6 +79,7 @@ class KubernetesPods {
           );
         }
         CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
+
         // Don't throw error - container succeeded, PreStopHook failure is non-critical
         return false; // Pod is not running, but we don't treat it as a failure
       }
@@ -90,8 +90,9 @@ class KubernetesPods {
         CloudRunnerLogger.log(
           `Pod ${podName} was killed with PreStopHook failure. Waiting for container status to determine if container succeeded...`,
         );
+
         // Wait a bit for container status to become available (up to 30 seconds)
-        for (let i = 0; i < 6; i++) {
+        for (let index = 0; index < 6; index++) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
           try {
             const updatedPod = (await kubeClient.listNamespacedPod(namespace)).body.items.find(
@@ -105,6 +106,7 @@ class KubernetesPods {
                   CloudRunnerLogger.logWarning(
                     `Pod ${podName} container succeeded (exit code 0) after waiting. PreStopHook failure is non-fatal.`,
                   );
+
                   return false; // Pod is not running, but container succeeded
                 } else {
                   CloudRunnerLogger.log(
@@ -121,12 +123,14 @@ class KubernetesPods {
             CloudRunnerLogger.log(`Error while waiting for container status: ${waitError}`);
           }
         }
+
         // If we still don't have container status after waiting, but only PreStopHook failed,
         // be lenient - the container might have succeeded but status wasn't updated
         if (containerExitCode === undefined && hasPreStopHookFailure && !hasExceededGracePeriod) {
           CloudRunnerLogger.logWarning(
             `Pod ${podName} container status not available after waiting, but only PreStopHook failed (no ExceededGracePeriod). Assuming container may have succeeded.`,
           );
+
           return false; // Be lenient - PreStopHook failure alone is not fatal
         }
         CloudRunnerLogger.log(
@@ -139,6 +143,7 @@ class KubernetesPods {
         CloudRunnerLogger.logWarning(
           `Pod ${podName} has PreStopHook failure but no container failure detected. Treating as non-fatal.`,
         );
+
         return false; // PreStopHook failure alone is not fatal if container status is unclear
       }
 
@@ -149,8 +154,10 @@ class KubernetesPods {
         CloudRunnerLogger.logWarning(
           `Pod ${podName} was killed (exit code 137 - likely OOM or resource limit) with PreStopHook/grace period issues. This may be a resource constraint issue rather than a build failure.`,
         );
+
         // Still log the details but don't fail the test - the build might have succeeded before being killed
         CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
+
         return false; // Don't treat system kills as test failures if only PreStopHook issues
       }
 

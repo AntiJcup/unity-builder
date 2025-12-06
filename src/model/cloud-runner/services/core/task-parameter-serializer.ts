@@ -33,6 +33,7 @@ export class TaskParameterSerializer {
         ...TaskParameterSerializer.serializeInput(),
         ...TaskParameterSerializer.serializeCloudRunnerOptions(),
         ...CommandHookService.getSecrets(CommandHookService.getHooks(buildParameters.commandHooks)),
+
         // Include AWS environment variables for LocalStack compatibility
         ...TaskParameterSerializer.serializeAwsEnvironmentVariables(),
       ]
@@ -94,7 +95,7 @@ export class TaskParameterSerializer {
   }
 
   private static serializeAwsEnvironmentVariables() {
-    const awsEnvVars = [
+    const awsEnvironmentVariables = [
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY',
       'AWS_DEFAULT_REGION',
@@ -107,7 +108,7 @@ export class TaskParameterSerializer {
       'AWS_CLOUD_WATCH_LOGS_ENDPOINT',
     ];
 
-    return awsEnvVars
+    return awsEnvironmentVariables
       .filter((key) => process.env[key] !== undefined)
       .map((key) => ({
         name: key,

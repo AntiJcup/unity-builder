@@ -31,7 +31,7 @@ export class RemoteClient {
     const logFile = Cli.options!['logFile'];
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
-    
+
     // For K8s, ensure stdout is unbuffered so messages are captured immediately
     if (CloudRunnerOptions.providerStrategy === 'k8s') {
       process.stdout.setDefaultEncoding('utf8');
@@ -49,12 +49,10 @@ export class RemoteClient {
         // For K8s, write to both log file and stdout so kubectl logs can capture it
         if (CloudRunnerOptions.providerStrategy === 'k8s') {
           fs.appendFileSync(logFile, element);
+
           // Write to stdout so kubectl logs can capture it - ensure newline is included
+          // Stdout flushes automatically on newline, so no explicit flush needed
           process.stdout.write(`${element}\n`);
-          // Force flush if possible
-          if (typeof process.stdout.flush === 'function') {
-            process.stdout.flush();
-          }
           CloudRunnerLogger.log(element);
         } else {
           CloudRunnerLogger.log(element);
@@ -66,10 +64,9 @@ export class RemoteClient {
       if (CloudRunnerOptions.providerStrategy === 'k8s') {
         if (lingeringLine) {
           fs.appendFileSync(logFile, lingeringLine);
+
+          // Stdout flushes automatically on newline
           process.stdout.write(`${lingeringLine}\n`);
-          if (typeof process.stdout.flush === 'function') {
-            process.stdout.flush();
-          }
         }
         CloudRunnerLogger.log(lingeringLine);
       } else {
@@ -81,6 +78,7 @@ export class RemoteClient {
   @CliFunction(`remote-cli-post-build`, `runs a cloud runner build`)
   public static async remoteClientPostBuild(): Promise<string> {
     RemoteClientLogger.log(`Running POST build tasks`);
+
     // Ensure cache key is present in logs for assertions
     RemoteClientLogger.log(`CACHE_KEY=${CloudRunner.buildParameters.cacheKey}`);
     CloudRunnerLogger.log(`${CloudRunner.buildParameters.cacheKey}`);
@@ -89,7 +87,12 @@ export class RemoteClient {
     try {
       const libraryFolderHost = CloudRunnerFolders.libraryFolderAbsolute;
       if (fs.existsSync(libraryFolderHost)) {
-        const libraryEntries = await fs.promises.readdir(libraryFolderHost).catch(() => [] as string[]);
+        let libraryEntries: string[] = [];
+        try {
+          libraryEntries = await fs.promises.readdir(libraryFolderHost);
+        } catch {
+          libraryEntries = [];
+        }
         if (libraryEntries.length > 0) {
           await Caching.PushToCache(
             CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/Library`),
@@ -110,7 +113,12 @@ export class RemoteClient {
     try {
       const buildFolderHost = CloudRunnerFolders.projectBuildFolderAbsolute;
       if (fs.existsSync(buildFolderHost)) {
-        const buildEntries = await fs.promises.readdir(buildFolderHost).catch(() => [] as string[]);
+        let buildEntries: string[] = [];
+        try {
+          buildEntries = await fs.promises.readdir(buildFolderHost);
+        } catch {
+          buildEntries = [];
+        }
         if (buildEntries.length > 0) {
           await Caching.PushToCache(
             CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/build`),
@@ -145,14 +153,12 @@ export class RemoteClient {
 
     // Ensure success marker is present in logs for tests
     // For K8s, kubectl logs reads from stdout/stderr, so we must write to stdout
-    // Also ensure it's flushed immediately
     const successMessage = `Activation successful`;
+
     // Write to stdout first so kubectl logs can capture it
+    // Stdout flushes automatically on newline
     process.stdout.write(`${successMessage}\n`);
-    // Force flush stdout to ensure it's captured
-    if (process.stdout.isTTY === false) {
-      process.stdout.write(''); // Trigger flush
-    }
+
     // Also log via CloudRunnerLogger for GitHub Actions
     CloudRunnerLogger.log(successMessage);
 
@@ -262,6 +268,7 @@ export class RemoteClient {
     await CloudRunnerSystem.Run(`git lfs install`);
     assert(fs.existsSync(`.git`), 'git folder exists');
     RemoteClientLogger.log(`${CloudRunner.buildParameters.branch}`);
+
     // Ensure refs exist (tags and PR refs)
     await CloudRunnerSystem.Run(`git fetch --all --tags || true`);
     if ((CloudRunner.buildParameters.branch || '').startsWith('pull/')) {
@@ -272,19 +279,19 @@ export class RemoteClient {
     if (targetSha) {
       try {
         await CloudRunnerSystem.Run(`git checkout ${targetSha}`);
-      } catch (_error) {
+      } catch {
         try {
           await CloudRunnerSystem.Run(`git fetch origin ${targetSha} || true`);
           await CloudRunnerSystem.Run(`git checkout ${targetSha}`);
-        } catch (_error2) {
+        } catch (error) {
           RemoteClientLogger.logWarning(`Falling back to branch checkout; SHA not found: ${targetSha}`);
           try {
             await CloudRunnerSystem.Run(`git checkout ${targetBranch}`);
-          } catch (_error3) {
+          } catch {
             if ((targetBranch || '').startsWith('pull/')) {
               await CloudRunnerSystem.Run(`git checkout origin/${targetBranch}`);
             } else {
-              throw _error2;
+              throw error;
             }
           }
         }
@@ -336,7 +343,7 @@ export class RemoteClient {
       RemoteClientLogger.log(`Pulled LFS files without explicit token configuration`);
 
       return;
-    } catch (_error) {
+    } catch {
       /* no-op: best-effort git lfs pull without tokens may fail */
       void 0;
     }
@@ -411,15 +418,15 @@ export class RemoteClient {
       try {
         await CloudRunnerSystem.Run(`git reset --hard "${sha}"`);
         await CloudRunnerSystem.Run(`git checkout ${sha}`);
-      } catch (_error) {
+      } catch {
         RemoteClientLogger.logWarning(`Retained workspace: SHA not found, falling back to branch ${branch}`);
         try {
           await CloudRunnerSystem.Run(`git checkout ${branch}`);
-        } catch (_error2) {
+        } catch (error) {
           if ((branch || '').startsWith('pull/')) {
             await CloudRunnerSystem.Run(`git checkout origin/${branch}`);
           } else {
-            throw _error2;
+            throw error;
           }
         }
       }

@@ -96,6 +96,7 @@ describe('Cloud Runner Retain Workspace', () => {
           CloudRunnerLogger.log(`Failed to cleanup workspace: ${error.message}`);
         }
       }
+
       // Clean up cache files to prevent disk space issues
       const cachePath = `./cloud-runner-cache`;
       if (fs.existsSync(cachePath)) {

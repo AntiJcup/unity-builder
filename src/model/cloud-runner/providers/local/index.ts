@@ -74,8 +74,10 @@ class LocalCloudRunner implements ProviderInterface {
         .split('\n')
         .filter((x) => x.trim().length > 0)
         .join(' ; ');
+
       // Use shell-quote to properly escape the command string, preventing command injection
       const bashWrapped = `bash -lc ${quote([inline])}`;
+
       return await CloudRunnerSystem.Run(bashWrapped);
     }
 

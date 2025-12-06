@@ -12,8 +12,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { AwsClientFactory } from '../../providers/aws/aws-client-factory';
 import { promisify } from 'node:util';
-import { exec as execCb } from 'node:child_process';
-const exec = promisify(execCb);
+import { exec as execCallback } from 'node:child_process';
+const exec = promisify(execCallback);
 export class SharedWorkspaceLocking {
   private static _s3: S3;
   private static get s3(): S3 {
@@ -21,6 +21,7 @@ export class SharedWorkspaceLocking {
       // Use factory so LocalStack endpoint/path-style settings are honored
       SharedWorkspaceLocking._s3 = AwsClientFactory.getS3();
     }
+
     return SharedWorkspaceLocking._s3;
   }
   private static get useRclone() {
@@ -28,6 +29,7 @@ export class SharedWorkspaceLocking {
   }
   private static async rclone(command: string): Promise<string> {
     const { stdout } = await exec(`rclone ${command}`);
+
     return stdout.toString();
   }
   private static get bucket() {
@@ -54,17 +56,18 @@ export class SharedWorkspaceLocking {
       } catch {
         await SharedWorkspaceLocking.rclone(`mkdir ${bucket}`);
       }
+
       return;
     }
     try {
       await SharedWorkspaceLocking.s3.send(new HeadBucketCommand({ Bucket: bucket }));
     } catch {
       const region = Input.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
-      const createParams: any = { Bucket: bucket };
+      const createParameters: any = { Bucket: bucket };
       if (region && region !== 'us-east-1') {
-        createParams.CreateBucketConfiguration = { LocationConstraint: region };
+        createParameters.CreateBucketConfiguration = { LocationConstraint: region };
       }
-      await SharedWorkspaceLocking.s3.send(new CreateBucketCommand(createParams));
+      await SharedWorkspaceLocking.s3.send(new CreateBucketCommand(createParameters));
     }
   }
   private static async listObjects(prefix: string, bucket = SharedWorkspaceLocking.bucket): Promise<string[]> {
@@ -77,6 +80,7 @@ export class SharedWorkspaceLocking {
       try {
         const output = await SharedWorkspaceLocking.rclone(`lsjson ${path}`);
         const json = JSON.parse(output) as { Name: string; IsDir: boolean }[];
+
         return json.map((e) => (e.IsDir ? `${e.Name}/` : e.Name));
       } catch {
         return [];
@@ -92,6 +96,7 @@ export class SharedWorkspaceLocking {
     for (const c of result.Contents || []) {
       if (c.Key && c.Key !== prefix) entries.push(c.Key.slice(prefix.length));
     }
+
     return entries;
   }
   public static async GetAllWorkspaces(buildParametersContext: BuildParameters): Promise<string[]> {
@@ -296,13 +301,11 @@ export class SharedWorkspaceLocking {
     const timestamp = Date.now();
     const key = `${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/${timestamp}_${workspace}_workspace`;
     await SharedWorkspaceLocking.ensureBucketExists();
-    if (SharedWorkspaceLocking.useRclone) {
-      await SharedWorkspaceLocking.rclone(`touch ${SharedWorkspaceLocking.bucket}/${key}`);
-    } else {
-      await SharedWorkspaceLocking.s3.send(
-        new PutObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key, Body: new Uint8Array(0) }),
-      );
-    }
+    await (SharedWorkspaceLocking.useRclone
+      ? SharedWorkspaceLocking.rclone(`touch ${SharedWorkspaceLocking.bucket}/${key}`)
+      : SharedWorkspaceLocking.s3.send(
+          new PutObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key, Body: new Uint8Array(0) }),
+        ));
 
     const workspaces = await SharedWorkspaceLocking.GetAllWorkspaces(buildParametersContext);
 
@@ -328,26 +331,20 @@ export class SharedWorkspaceLocking {
       buildParametersContext.cacheKey
     }/${Date.now()}_${runId}_${ending}_lock`;
     await SharedWorkspaceLocking.ensureBucketExists();
-    if (SharedWorkspaceLocking.useRclone) {
-      await SharedWorkspaceLocking.rclone(`touch ${SharedWorkspaceLocking.bucket}/${key}`);
-    } else {
-      await SharedWorkspaceLocking.s3.send(
-        new PutObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key, Body: new Uint8Array(0) }),
-      );
-    }
+    await (SharedWorkspaceLocking.useRclone
+      ? SharedWorkspaceLocking.rclone(`touch ${SharedWorkspaceLocking.bucket}/${key}`)
+      : SharedWorkspaceLocking.s3.send(
+          new PutObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key, Body: new Uint8Array(0) }),
+        ));
 
     const hasLock = await SharedWorkspaceLocking.HasWorkspaceLock(workspace, runId, buildParametersContext);
 
     if (hasLock) {
       CloudRunner.lockedWorkspace = workspace;
     } else {
-      if (SharedWorkspaceLocking.useRclone) {
-        await SharedWorkspaceLocking.rclone(`delete ${SharedWorkspaceLocking.bucket}/${key}`);
-      } else {
-        await SharedWorkspaceLocking.s3.send(
-          new DeleteObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key }),
-        );
-      }
+      await (SharedWorkspaceLocking.useRclone
+        ? SharedWorkspaceLocking.rclone(`delete ${SharedWorkspaceLocking.bucket}/${key}`)
+        : SharedWorkspaceLocking.s3.send(new DeleteObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: key })));
     }
 
     return hasLock;
@@ -365,18 +362,16 @@ export class SharedWorkspaceLocking {
     CloudRunnerLogger.log(`Deleting lock ${workspace}/${file}`);
     CloudRunnerLogger.log(`rm ${SharedWorkspaceLocking.workspaceRoot}${buildParametersContext.cacheKey}/${file}`);
     if (file) {
-      if (SharedWorkspaceLocking.useRclone) {
-        await SharedWorkspaceLocking.rclone(
-          `delete ${SharedWorkspaceLocking.bucket}/${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/${file}`,
-        );
-      } else {
-        await SharedWorkspaceLocking.s3.send(
-          new DeleteObjectCommand({
-            Bucket: SharedWorkspaceLocking.bucket,
-            Key: `${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/${file}`,
-          }),
-        );
-      }
+      await (SharedWorkspaceLocking.useRclone
+        ? SharedWorkspaceLocking.rclone(
+            `delete ${SharedWorkspaceLocking.bucket}/${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/${file}`,
+          )
+        : SharedWorkspaceLocking.s3.send(
+            new DeleteObjectCommand({
+              Bucket: SharedWorkspaceLocking.bucket,
+              Key: `${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/${file}`,
+            }),
+          ));
     }
 
     return !(await SharedWorkspaceLocking.HasWorkspaceLock(workspace, runId, buildParametersContext));
@@ -386,13 +381,11 @@ export class SharedWorkspaceLocking {
     const prefix = `${SharedWorkspaceLocking.workspacePrefix}${buildParametersContext.cacheKey}/`;
     const files = await SharedWorkspaceLocking.listObjects(prefix);
     for (const file of files.filter((x) => x.includes(`_${workspace}_`))) {
-      if (SharedWorkspaceLocking.useRclone) {
-        await SharedWorkspaceLocking.rclone(`delete ${SharedWorkspaceLocking.bucket}/${prefix}${file}`);
-      } else {
-        await SharedWorkspaceLocking.s3.send(
-          new DeleteObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: `${prefix}${file}` }),
-        );
-      }
+      await (SharedWorkspaceLocking.useRclone
+        ? SharedWorkspaceLocking.rclone(`delete ${SharedWorkspaceLocking.bucket}/${prefix}${file}`)
+        : SharedWorkspaceLocking.s3.send(
+            new DeleteObjectCommand({ Bucket: SharedWorkspaceLocking.bucket, Key: `${prefix}${file}` }),
+          ));
     }
   }
 
@@ -401,6 +394,7 @@ export class SharedWorkspaceLocking {
     const withoutScheme = path.replace('s3://', '');
     const [bucket, ...rest] = withoutScheme.split('/');
     const prefix = rest.join('/');
+
     return SharedWorkspaceLocking.listObjects(prefix, bucket);
   }
 }

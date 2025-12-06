@@ -77,9 +77,9 @@ jobs:
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
-          # Create cluster with port mapping to expose host services
-          # Map host port 4566 to agent node so pods can access LocalStack via host.k3d.internal
-          k3d cluster create unity-builder --agents 1 --port "4566:4566@agent:0" --wait
+          # Create cluster - host.k3d.internal will allow pods to access host services
+          # No port mapping needed - LocalStack is on host, accessible via host.k3d.internal:4566
+          k3d cluster create unity-builder --agents 1 --wait
           kubectl config current-context | cat
       - name: Verify cluster readiness and LocalStack connectivity
         timeout-minutes: 2

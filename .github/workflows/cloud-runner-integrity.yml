@@ -45,6 +45,14 @@ jobs:
         uses: localstack/setup-localstack@v0.2.4
         with:
           install-awslocal: true
+      - name: Verify LocalStack is running
+        run: |
+          echo "Checking LocalStack status..."
+          curl -s http://localhost:4566/_localstack/health | head -10 || echo "LocalStack health check failed"
+          # Check if LocalStack container is running
+          docker ps | grep localstack || echo "No LocalStack container found"
+          # Show LocalStack container network info
+          docker ps --format "{{.Names}}" | grep -i localstack | head -1 | xargs -I {} docker inspect {} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' || echo "Could not get LocalStack IP"
       - name: Create S3 bucket for tests (host LocalStack)
         run: |
           awslocal s3 mb s3://$AWS_STACK_NAME || true
@@ -56,7 +64,7 @@ jobs:
           # No port mapping needed - LocalStack is on host, accessible via host.k3d.internal:4566
           k3d cluster create unity-builder --agents 1 --wait
           kubectl config current-context | cat
-      - name: Verify cluster readiness
+      - name: Verify cluster readiness and LocalStack connectivity
         timeout-minutes: 2
         run: |
           for i in {1..60}; do 
@@ -71,6 +79,14 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
+          # Test LocalStack connectivity from k3d cluster
+          echo "Testing LocalStack connectivity from k3d cluster..."
+          echo "From host (should work):"
+          curl -s --max-time 5 http://localhost:4566/_localstack/health | head -5 || echo "Host connectivity failed"
+          echo "From k3d cluster via host.k3d.internal:"
+          kubectl run test-localstack --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
+            curl -v --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -20 || \
+            echo "Cluster connectivity test - if this fails, LocalStack may not be accessible from k3d"
           # Clean up disk space on the k3d node to prevent evictions
           echo "Cleaning up disk space on k3d nodes..."
           docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true

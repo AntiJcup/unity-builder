@@ -71,6 +71,14 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
+          # Clean up disk space on the k3d node to prevent evictions
+          echo "Cleaning up disk space on k3d nodes..."
+          docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on the node to prevent evictions
+          echo "Cleaning up disk space on k3d nodes..."
+          docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true
+          docker system prune -af --volumes || true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -104,9 +112,13 @@ jobs:
             kubectl delete "$secret" --ignore-not-found=true || true
           done || true
           sleep 3
-          # Clean up disk space
+          # Clean up disk space - aggressive cleanup to prevent evictions
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node to prevent ephemeral-storage evictions
+          echo "Cleaning up disk space on k3d node..."
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes || true" 2>/dev/null || true
+          docker exec k3d-unity-builder-agent-0 sh -c "df -h" 2>/dev/null || true
       - name: Run cloud-runner-end2end-caching test
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand

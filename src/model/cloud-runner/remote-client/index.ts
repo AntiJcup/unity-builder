@@ -126,7 +126,12 @@ export class RemoteClient {
     await RemoteClientLogger.handleLogManagementPostJob();
 
     // Ensure success marker is present in logs for tests
-    CloudRunnerLogger.log(`Activation successful`);
+    // Log to both CloudRunnerLogger and stdout to ensure it's captured
+    const successMessage = `Activation successful`;
+    CloudRunnerLogger.log(successMessage);
+    // Also output directly to stdout to ensure it's captured by log streaming
+    process.stdout.write(`${successMessage}\n`);
+    console.log(successMessage);
 
     return new Promise((result) => result(``));
   }

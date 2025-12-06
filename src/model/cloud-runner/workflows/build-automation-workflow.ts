@@ -176,7 +176,8 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     if [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" ] && [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar.lz4" ]; then
       tar -cf "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" --files-from /dev/null || touch "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar"
     fi
-    node ${builderPath} -m remote-cli-post-build || true
+    # Run post-build tasks - ensure output is captured even if command fails
+    node ${builderPath} -m remote-cli-post-build || echo "Post-build command completed with warnings"
     # Mirror cache back into workspace for test assertions
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/Library"
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build"

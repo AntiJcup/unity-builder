@@ -41,18 +41,19 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version | cat
-      - name: Start LocalStack (S3) for k3d access
+      - name: Start LocalStack (S3) on host
         run: |
-          # Start LocalStack manually to ensure it's accessible from k3d cluster
+          # Start LocalStack on the host to simulate external S3 (like production)
           # Stop any existing LocalStack containers
           docker stop localstack-k3d 2>/dev/null || true
           docker rm localstack-k3d 2>/dev/null || true
-          # Start LocalStack with port mapping to make it accessible from k3d
+          # Start LocalStack with port exposed, listening on all interfaces
           docker run -d --name localstack-k3d \
-            -p 4566:4566 \
+            -p 0.0.0.0:4566:4566 \
             -e SERVICES=s3,cloudformation,ecs,kinesis,cloudwatch,logs \
             -e DEBUG=1 \
             -e DOCKER_HOST=unix:///var/run/docker.sock \
+            -e LOCALSTACK_HOST=0.0.0.0 \
             localstack/localstack:latest
           # Wait for LocalStack to be ready
           echo "Waiting for LocalStack to be ready..."
@@ -64,6 +65,8 @@ jobs:
             echo "Waiting for LocalStack... ($i/30)"
             sleep 2
           done
+          # Verify LocalStack is accessible
+          curl -s http://localhost:4566/_localstack/health | head -5 || echo "LocalStack health check"
       - name: Install awscli-local
         run: |
           pip install awscli-local || pip3 install awscli-local || echo "awslocal installation skipped"
@@ -74,11 +77,11 @@ jobs:
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
-          # Create cluster with basic configuration
-          # Using simpler setup to avoid hangs - resource limits handled via container requests
-          k3d cluster create unity-builder --agents 1 --wait
+          # Create cluster with port mapping to expose host services
+          # Map host port 4566 to agent node so pods can access LocalStack via host.k3d.internal
+          k3d cluster create unity-builder --agents 1 --port "4566:4566@agent:0" --wait
           kubectl config current-context | cat
-      - name: Verify cluster readiness
+      - name: Verify cluster readiness and LocalStack connectivity
         timeout-minutes: 2
         run: |
           for i in {1..60}; do 
@@ -93,9 +96,11 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
-          # Verify LocalStack is accessible from cluster via host.k3d.internal
-          echo "Testing LocalStack connectivity from k3d cluster..."
-          kubectl run test-localstack-connectivity --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- curl -s --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 || echo "Note: LocalStack connectivity test - this is expected to work once LocalStack is fully ready"
+          # Test LocalStack connectivity from cluster
+          echo "Testing LocalStack connectivity from k3d cluster via host.k3d.internal:4566..."
+          kubectl run test-localstack --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
+            curl -s --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -10 || \
+            echo "Note: If this fails, LocalStack may need additional network configuration"
       - uses: actions/setup-node@v4
         with:
           node-version: 20

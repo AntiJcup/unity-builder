@@ -39,6 +39,8 @@ class KubernetesJobSpecFactory {
         endpointEnvNames.has(x.name) &&
         (value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'))
       ) {
+        // Replace localhost with host.k3d.internal so pods can access host services
+        // This simulates accessing external services (like real AWS S3)
         value = value
           .replace('http://localhost', 'http://host.k3d.internal')
           .replace('http://127.0.0.1', 'http://host.k3d.internal');

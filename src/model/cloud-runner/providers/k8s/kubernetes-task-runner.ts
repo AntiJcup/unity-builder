@@ -28,8 +28,9 @@ class KubernetesTaskRunner {
       CloudRunnerLogger.log(
         `Streaming logs from pod: ${podName} container: ${containerName} namespace: ${namespace} ${CloudRunner.buildParameters.kubeVolumeSize}/${CloudRunner.buildParameters.containerCpu}/${CloudRunner.buildParameters.containerMemory}`,
       );
+      const isRunning = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
       let extraFlags = ``;
-      extraFlags += (await KubernetesPods.IsPodRunning(podName, namespace, kubeClient))
+      extraFlags += isRunning
         ? ` -f -c ${containerName} -n ${namespace}`
         : ` --previous -n ${namespace}`;
 
@@ -52,6 +53,16 @@ class KubernetesTaskRunner {
         await new Promise((resolve) => setTimeout(resolve, 3000));
         const continueStreaming = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
         CloudRunnerLogger.log(`K8s logging error ${error} ${continueStreaming}`);
+        // If pod is not running and we tried --previous but it failed, try without --previous
+        if (!isRunning && !continueStreaming && error?.message?.includes('previous terminated container')) {
+          CloudRunnerLogger.log(`Previous container not found, trying current container logs...`);
+          try {
+            await CloudRunnerSystem.Run(`kubectl logs ${podName} -c ${containerName} -n ${namespace}`, false, true, callback);
+          } catch (fallbackError: any) {
+            CloudRunnerLogger.log(`Fallback log fetch also failed: ${fallbackError}`);
+            // If both fail, continue - we'll get what we can from pod status
+          }
+        }
         if (continueStreaming) {
           continue;
         }
@@ -59,6 +70,11 @@ class KubernetesTaskRunner {
           retriesAfterFinish++;
 
           continue;
+        }
+        // Don't throw if we're just missing previous container logs - this is non-fatal
+        if (error?.message?.includes('previous terminated container')) {
+          CloudRunnerLogger.logWarning(`Could not fetch previous container logs, but continuing...`);
+          break;
         }
         throw error;
       }

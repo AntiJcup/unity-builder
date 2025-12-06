@@ -145,7 +145,9 @@ class KubernetesJobSpecFactory {
       };
     }
 
-    job.spec.template.spec.containers[0].resources.requests[`ephemeral-storage`] = '10Gi';
+    // Set ephemeral-storage request to a reasonable value (2Gi) to prevent evictions
+    // The node needs some free space, so requesting 10Gi when node only has ~2.6GB available causes evictions
+    job.spec.template.spec.containers[0].resources.requests[`ephemeral-storage`] = '2Gi';
 
     return job;
   }

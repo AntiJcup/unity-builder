@@ -41,43 +41,14 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version | cat
-      - name: Start LocalStack (S3) on host
-        run: |
-          # Start LocalStack on the host to simulate external S3 (like production)
-          # Stop any existing LocalStack containers
-          docker stop localstack-k3d 2>/dev/null || true
-          docker rm localstack-k3d 2>/dev/null || true
-          # Start LocalStack using host network mode so it's directly accessible
-          # This ensures it's accessible from k3d pods via host.k3d.internal
-          docker run -d --name localstack-k3d \
-            --network host \
-            -e SERVICES=s3,cloudformation,ecs,kinesis,cloudwatch,logs \
-            -e DEBUG=1 \
-            -e DOCKER_HOST=unix:///var/run/docker.sock \
-            -e LOCALSTACK_HOST=0.0.0.0 \
-            localstack/localstack:latest
-          # Wait for LocalStack to be ready
-          echo "Waiting for LocalStack to be ready..."
-          for i in {1..30}; do
-            if curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
-              echo "LocalStack is ready"
-              break
-            fi
-            echo "Waiting for LocalStack... ($i/30)"
-            sleep 2
-          done
-          # Verify LocalStack is accessible
-          curl -s http://localhost:4566/_localstack/health | head -5 || echo "LocalStack health check"
-          # Show network info
-          echo "LocalStack container network info:"
-          docker inspect localstack-k3d | grep -i network -A 5 || true
-      - name: Install awscli-local
-        run: |
-          pip install awscli-local || pip3 install awscli-local || echo "awslocal installation skipped"
+      - name: Start LocalStack (S3)
+        uses: localstack/setup-localstack@v0.2.4
+        with:
+          install-awslocal: true
       - name: Create S3 bucket for tests (host LocalStack)
         run: |
-          awslocal s3 mb s3://$AWS_STACK_NAME || aws --endpoint-url=http://localhost:4566 s3 mb s3://$AWS_STACK_NAME || true
-          awslocal s3 ls || aws --endpoint-url=http://localhost:4566 s3 ls || echo "S3 bucket listing completed"
+          awslocal s3 mb s3://$AWS_STACK_NAME || true
+          awslocal s3 ls
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
@@ -85,7 +56,7 @@ jobs:
           # No port mapping needed - LocalStack is on host, accessible via host.k3d.internal:4566
           k3d cluster create unity-builder --agents 1 --wait
           kubectl config current-context | cat
-      - name: Verify cluster readiness and LocalStack connectivity
+      - name: Verify cluster readiness
         timeout-minutes: 2
         run: |
           for i in {1..60}; do 
@@ -100,23 +71,6 @@ jobs:
           kubectl get storageclass
           # Show node resources
           kubectl describe nodes | grep -A 5 "Allocated resources" || true
-          # Get host gateway IP that k3d uses
-          HOST_IP=$(docker inspect k3d-unity-builder-agent-0 | grep -i gateway | head -1 | grep -oE '"Gateway":"[^"]*"' | cut -d'"' -f4 || echo "")
-          if [ -z "$HOST_IP" ]; then
-            # Try alternative method
-            HOST_IP=$(docker network inspect k3d-unity-builder | grep -i gateway | head -1 | grep -oE '"Gateway":"[^"]*"' | cut -d'"' -f4 || echo "")
-          fi
-          echo "Host gateway IP: $HOST_IP"
-          echo "Testing LocalStack from host (should work):"
-          curl -s --max-time 5 http://localhost:4566/_localstack/health | head -5 || echo "Host connectivity failed"
-          echo "Testing LocalStack from k3d cluster via host.k3d.internal:4566..."
-          kubectl run test-localstack-dns --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
-            curl -v --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -15 || echo "DNS-based connectivity test completed"
-          if [ -n "$HOST_IP" ]; then
-            echo "Testing LocalStack from k3d cluster via host IP $HOST_IP:4566..."
-            kubectl run test-localstack-ip --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
-              curl -v --max-time 5 http://$HOST_IP:4566/_localstack/health 2>&1 | head -15 || echo "IP-based connectivity test completed"
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -166,9 +120,9 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
-          # Set lower resource requests for tests to prevent evictions in k3d
-          containerCpu: '512'
-          containerMemory: '512'
+          # Set resource requests for tests - increased memory to prevent OOM kills
+          containerCpu: '1000'
+          containerMemory: '1024'
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           AWS_S3_ENDPOINT: http://localhost:4566

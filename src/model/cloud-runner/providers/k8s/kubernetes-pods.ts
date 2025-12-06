@@ -87,10 +87,42 @@ class KubernetesPods {
       // The container might have succeeded but status hasn't been updated yet
       if (wasKilled && hasPreStopHookFailure && containerExitCode === undefined) {
         CloudRunnerLogger.log(
-          `Pod ${podName} was killed with PreStopHook failure, but container status not yet available. This may be non-fatal if container succeeded.`,
+          `Pod ${podName} was killed with PreStopHook failure, but container status not yet available. Waiting for container status...`,
         );
-        // Still throw error for now, but with more context
-        // The task runner will retry and get the actual container status
+        // Wait a bit for container status to become available (up to 30 seconds)
+        for (let i = 0; i < 6; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          try {
+            const updatedPod = (
+              await kubeClient.listNamespacedPod(namespace)
+            ).body.items.find((x) => podName === x.metadata?.name);
+            if (updatedPod?.status?.containerStatuses && updatedPod.status.containerStatuses.length > 0) {
+              const updatedContainerStatus = updatedPod.status.containerStatuses[0];
+              if (updatedContainerStatus.state?.terminated) {
+                const updatedExitCode = updatedContainerStatus.state.terminated.exitCode;
+                if (updatedExitCode === 0) {
+                  CloudRunnerLogger.logWarning(
+                    `Pod ${podName} container succeeded (exit code 0) after waiting. PreStopHook failure is non-fatal.`,
+                  );
+                  return false; // Pod is not running, but container succeeded
+                } else {
+                  CloudRunnerLogger.log(
+                    `Pod ${podName} container failed with exit code ${updatedExitCode} after waiting.`,
+                  );
+                  errorDetails.push(
+                    `Container terminated after wait: exit code ${updatedExitCode}`,
+                  );
+                  break;
+                }
+              }
+            }
+          } catch (waitError) {
+            CloudRunnerLogger.log(`Error while waiting for container status: ${waitError}`);
+          }
+        }
+        CloudRunnerLogger.log(
+          `Container status still not available after waiting. Assuming failure due to PreStopHook issues.`,
+        );
       }
 
       const errorMessage = `K8s pod failed\n${errorDetails.join('\n')}`;

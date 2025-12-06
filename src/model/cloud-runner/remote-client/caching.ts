@@ -95,9 +95,7 @@ export class Caching {
 
       // If disk usage is high (>90%), proactively clean up old cache files
       if (diskUsagePercent > 90) {
-        CloudRunnerLogger.log(
-          `Disk usage is ${diskUsagePercent}% - cleaning up old cache files before tar operation`,
-        );
+        CloudRunnerLogger.log(`Disk usage is ${diskUsagePercent}% - cleaning up old cache files before tar operation`);
         try {
           const cacheParent = path.dirname(cacheFolder);
           if (await fileExists(cacheParent)) {
@@ -106,9 +104,7 @@ export class Caching {
               `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
             );
             // Also try to remove old cache directories
-            await CloudRunnerSystem.Run(
-              `find ${cacheParent} -type d -empty -delete 2>/dev/null || true`,
-            );
+            await CloudRunnerSystem.Run(`find ${cacheParent} -type d -empty -delete 2>/dev/null || true`);
             CloudRunnerLogger.log(`Cleanup completed. Checking disk space again...`);
             const diskCheckAfter = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
             CloudRunnerLogger.log(`Disk space after cleanup: ${diskCheckAfter}`);
@@ -143,9 +139,7 @@ export class Caching {
                 `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
               );
               // Remove empty cache directories
-              await CloudRunnerSystem.Run(
-                `find ${cacheParent} -type d -empty -delete 2>/dev/null || true`,
-              );
+              await CloudRunnerSystem.Run(`find ${cacheParent} -type d -empty -delete 2>/dev/null || true`);
               // Also try to clean up the entire cache folder if it's getting too large
               const cacheRoot = path.resolve(cacheParent, '..');
               if (await fileExists(cacheRoot)) {
@@ -165,7 +159,9 @@ export class Caching {
                 retrySucceeded = true;
               } catch (retryError: any) {
                 throw new Error(
-                  `Failed to create cache archive after cleanup. Original error: ${errorMessage}. Retry error: ${retryError?.message || retryError}`,
+                  `Failed to create cache archive after cleanup. Original error: ${errorMessage}. Retry error: ${
+                    retryError?.message || retryError
+                  }`,
                 );
               }
               // If retry succeeded, don't throw the original error - let execution continue after catch block
@@ -181,7 +177,9 @@ export class Caching {
           } catch (cleanupError: any) {
             CloudRunnerLogger.log(`Cleanup attempt failed: ${cleanupError}`);
             throw new Error(
-              `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Cleanup failed: ${cleanupError?.message || cleanupError}`,
+              `Failed to create cache archive due to insufficient disk space. Error: ${errorMessage}. Cleanup failed: ${
+                cleanupError?.message || cleanupError
+              }`,
             );
           }
         } else {

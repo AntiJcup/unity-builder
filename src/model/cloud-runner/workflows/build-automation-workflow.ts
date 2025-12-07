@@ -168,7 +168,8 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     if ! command -v npm > /dev/null 2>&1; then printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/npm && chmod +x /usr/local/bin/npm; fi
     if ! command -v n > /dev/null 2>&1; then printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/n && chmod +x /usr/local/bin/n; fi
     if ! command -v yarn > /dev/null 2>&1; then printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/yarn && chmod +x /usr/local/bin/yarn; fi
-    echo "game ci start"; echo "game ci start" >> /home/job-log.txt; echo "CACHE_KEY=$CACHE_KEY"; echo "$CACHE_KEY"; if [ -n "$LOCKED_WORKSPACE" ]; then echo "Retained Workspace: true"; fi; if [ -n "$LOCKED_WORKSPACE" ] && [ -d "$GITHUB_WORKSPACE/.git" ]; then echo "Retained Workspace Already Exists!"; fi; /entrypoint.sh
+    # Pipe entrypoint.sh output through log stream to capture Unity build output (including "Build succeeded")
+    { echo "game ci start"; echo "game ci start" >> /home/job-log.txt; echo "CACHE_KEY=$CACHE_KEY"; echo "$CACHE_KEY"; if [ -n "$LOCKED_WORKSPACE" ]; then echo "Retained Workspace: true"; fi; if [ -n "$LOCKED_WORKSPACE" ] && [ -d "$GITHUB_WORKSPACE/.git" ]; then echo "Retained Workspace Already Exists!"; fi; /entrypoint.sh; } | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
     mkdir -p "/data/cache/$CACHE_KEY/Library"
     if [ ! -f "/data/cache/$CACHE_KEY/Library/lib-$BUILD_GUID.tar" ] && [ ! -f "/data/cache/$CACHE_KEY/Library/lib-$BUILD_GUID.tar.lz4" ]; then
       tar -cf "/data/cache/$CACHE_KEY/Library/lib-$BUILD_GUID.tar" --files-from /dev/null || touch "/data/cache/$CACHE_KEY/Library/lib-$BUILD_GUID.tar"
@@ -176,14 +177,16 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     if [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" ] && [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar.lz4" ]; then
       tar -cf "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" --files-from /dev/null || touch "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar"
     fi
-    # Run post-build tasks - ensure output is captured even if command fails
-    node ${builderPath} -m remote-cli-post-build || echo "Post-build command completed with warnings"
+    # Run post-build tasks and pipe output through log stream to capture "Activation successful"
+    node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "Post-build command completed with warnings"
+    # Write end marker and pipe through log stream
+    echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
+    echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
     # Mirror cache back into workspace for test assertions
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/Library"
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build"
     cp -a "/data/cache/$CACHE_KEY/Library/." "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/Library/" || true
-    cp -a "/data/cache/$CACHE_KEY/build/." "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build/" || true
-    echo "end of cloud runner job"`;
+    cp -a "/data/cache/$CACHE_KEY/build/." "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build/" || true`;
       }
 
       // prettier-ignore

@@ -46,32 +46,35 @@ export class RemoteClient {
       lingeringLine = lines.pop() || '';
 
       for (const element of lines) {
-        // For K8s, write to both log file and stdout so kubectl logs can capture it
-        if (CloudRunnerOptions.providerStrategy === 'k8s') {
-          fs.appendFileSync(logFile, element);
+        // Always write to log file so output can be collected by providers
+        if (element.trim()) {
+          fs.appendFileSync(logFile, `${element}\n`);
+        }
 
+        // For K8s, also write to stdout so kubectl logs can capture it
+        if (CloudRunnerOptions.providerStrategy === 'k8s') {
           // Write to stdout so kubectl logs can capture it - ensure newline is included
           // Stdout flushes automatically on newline, so no explicit flush needed
           process.stdout.write(`${element}\n`);
-          CloudRunnerLogger.log(element);
-        } else {
-          CloudRunnerLogger.log(element);
         }
+
+        CloudRunnerLogger.log(element);
       }
     });
 
     process.stdin.on('end', () => {
-      if (CloudRunnerOptions.providerStrategy === 'k8s') {
-        if (lingeringLine) {
-          fs.appendFileSync(logFile, lingeringLine);
+      if (lingeringLine) {
+        // Always write to log file so output can be collected by providers
+        fs.appendFileSync(logFile, `${lingeringLine}\n`);
 
+        // For K8s, also write to stdout so kubectl logs can capture it
+        if (CloudRunnerOptions.providerStrategy === 'k8s') {
           // Stdout flushes automatically on newline
           process.stdout.write(`${lingeringLine}\n`);
         }
-        CloudRunnerLogger.log(lingeringLine);
-      } else {
-        CloudRunnerLogger.log(lingeringLine);
       }
+
+      CloudRunnerLogger.log(lingeringLine);
     });
   }
 

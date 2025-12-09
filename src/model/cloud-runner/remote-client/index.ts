@@ -156,13 +156,18 @@ export class RemoteClient {
 
     // Ensure success marker is present in logs for tests
     // For K8s, kubectl logs reads from stdout/stderr, so we must write to stdout
+    // For all providers, we write to stdout so it gets piped through the log stream
+    // The log stream will capture it and add it to BuildResults
     const successMessage = `Activation successful`;
 
-    // Write to stdout first so kubectl logs can capture it
+    // Write to stdout so it gets piped through remote-cli-log-stream when invoked via pipe
+    // This ensures the message is captured in BuildResults for all providers
     // Stdout flushes automatically on newline
     process.stdout.write(`${successMessage}\n`);
 
-    // Also log via CloudRunnerLogger for GitHub Actions
+    // Also log via CloudRunnerLogger and RemoteClientLogger for GitHub Actions and log file
+    // This ensures the message appears in log files for providers that read from log files
+    RemoteClientLogger.log(successMessage);
     CloudRunnerLogger.log(successMessage);
 
     return new Promise((result) => result(``));

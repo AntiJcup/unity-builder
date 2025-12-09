@@ -201,8 +201,9 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     { echo "game ci start"; echo "game ci start" >> /home/job-log.txt; echo "CACHE_KEY=$CACHE_KEY"; echo "$CACHE_KEY"; if [ -n "$LOCKED_WORKSPACE" ]; then echo "Retained Workspace: true"; fi; if [ -n "$LOCKED_WORKSPACE" ] && [ -d "$GITHUB_WORKSPACE/.git" ]; then echo "Retained Workspace Already Exists!"; fi; /entrypoint.sh; } | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
     # Run post-build and ensure output is captured in logs
     node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || true
-    echo "end of cloud runner job"
-    echo "---${CloudRunner.buildParameters.logId}"`;
+    # Write end marker through log stream to ensure it's captured in BuildResults
+    echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
+    echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt`;
     }
 
     // prettier-ignore

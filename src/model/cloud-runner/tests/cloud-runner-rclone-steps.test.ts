@@ -76,7 +76,9 @@ describe('Cloud Runner pre-built rclone steps', () => {
         try {
           const lines = await CloudRunnerSystem.RunAndReadLines(`rclone lsf ${remote}`);
           CloudRunnerLogger.log(lines.join(','));
-        } catch {}
+        } catch {
+          // Ignore errors when listing remote root (best-effort validation)
+        }
       }, 1_000_000_000);
     } else {
       it.skip('Run build and prebuilt rclone steps - rclone not configured', () => {

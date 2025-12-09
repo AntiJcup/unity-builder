@@ -1,5 +1,4 @@
 import { GitHubUrlInfo } from '../../providers/provider-url-parser';
-import * as fs from 'fs';
 
 // Import the mocked ProviderGitManager
 import { ProviderGitManager } from '../../providers/provider-git-manager';
@@ -15,7 +14,6 @@ jest.mock('@actions/core', () => ({
 jest.mock('fs');
 
 // Mock the entire provider-git-manager module
-const mockExecAsync = jest.fn();
 jest.mock('../../providers/provider-git-manager', () => {
   const originalModule = jest.requireActual('../../providers/provider-git-manager');
 
@@ -29,8 +27,6 @@ jest.mock('../../providers/provider-git-manager', () => {
     },
   };
 });
-
-const mockFs = fs as jest.Mocked<typeof fs>;
 const mockProviderGitManager = ProviderGitManager as jest.Mocked<typeof ProviderGitManager>;
 
 describe('ProviderGitManager', () => {

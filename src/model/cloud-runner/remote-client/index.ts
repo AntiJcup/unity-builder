@@ -143,7 +143,10 @@ export class RemoteClient {
         const uniqueJobFolderLinux = CloudRunnerFolders.ToLinuxFolder(
           CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
         );
-        if (fs.existsSync(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute) || fs.existsSync(uniqueJobFolderLinux)) {
+        if (
+          fs.existsSync(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute) ||
+          fs.existsSync(uniqueJobFolderLinux)
+        ) {
           await CloudRunnerSystem.Run(`rm -r ${uniqueJobFolderLinux} || true`);
         } else {
           RemoteClientLogger.log(`Skipping cleanup; unique job folder missing`);

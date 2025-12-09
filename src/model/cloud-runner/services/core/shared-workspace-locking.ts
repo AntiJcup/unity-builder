@@ -81,7 +81,7 @@ export class SharedWorkspaceLocking {
         const output = await SharedWorkspaceLocking.rclone(`lsjson ${path}`);
         const json = JSON.parse(output) as { Name: string; IsDir: boolean }[];
 
-        return json.map((e) => (e.IsDir ? `${e.Name}/` : e.Name));
+        return json.map((entry) => (entry.IsDir ? `${entry.Name}/` : entry.Name));
       } catch {
         return [];
       }

@@ -29,7 +29,7 @@ git config --global filter.lfs.smudge "git-lfs smudge --skip -- %f"
 git config --global filter.lfs.process "git-lfs filter-process --skip"
 BRANCH="${CloudRunner.buildParameters.cloudRunnerBranch}"
 REPO="${CloudRunnerFolders.unityBuilderRepoUrl}"
-if [ -n "$(git ls-remote --heads \"$REPO\" \"$BRANCH\" 2>/dev/null)" ]; then
+if [ -n "$(git ls-remote --heads "$REPO" "$BRANCH" 2>/dev/null)" ]; then
   git clone -q -b "$BRANCH" "$REPO" /builder
 else
   echo "Remote branch $BRANCH not found in $REPO; falling back to a known branch"

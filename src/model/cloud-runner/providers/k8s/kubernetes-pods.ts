@@ -61,9 +61,9 @@ class KubernetesPods {
       }
 
       // Check if only PreStopHook failed but container succeeded
-      const hasPreStopHookFailure = events.some((e) => e.reason === 'FailedPreStopHook');
-      const wasKilled = events.some((e) => e.reason === 'Killing');
-      const hasExceededGracePeriod = events.some((e) => e.reason === 'ExceededGracePeriod');
+      const hasPreStopHookFailure = events.some((event) => event.reason === 'FailedPreStopHook');
+      const wasKilled = events.some((event) => event.reason === 'Killing');
+      const hasExceededGracePeriod = events.some((event) => event.reason === 'ExceededGracePeriod');
 
       // If container succeeded (exit code 0), PreStopHook failure is non-critical
       // Also check if pod was killed but container might have succeeded

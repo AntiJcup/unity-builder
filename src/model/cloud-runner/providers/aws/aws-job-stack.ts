@@ -1,6 +1,7 @@
 import {
   CloudFormation,
   CreateStackCommand,
+  // eslint-disable-next-line import/named
   CreateStackCommandInput,
   DescribeStackResourcesCommand,
   DescribeStacksCommand,

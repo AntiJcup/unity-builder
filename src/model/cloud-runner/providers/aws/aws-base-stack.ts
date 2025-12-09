@@ -3,12 +3,16 @@ import * as core from '@actions/core';
 import {
   CloudFormation,
   CreateStackCommand,
+  // eslint-disable-next-line import/named
   CreateStackCommandInput,
   DescribeStacksCommand,
+  // eslint-disable-next-line import/named
   DescribeStacksCommandInput,
   ListStacksCommand,
+  // eslint-disable-next-line import/named
   Parameter,
   UpdateStackCommand,
+  // eslint-disable-next-line import/named
   UpdateStackCommandInput,
   waitUntilStackCreateComplete,
   waitUntilStackUpdateComplete,

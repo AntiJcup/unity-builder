@@ -4,6 +4,7 @@ import {
   ListStacksCommand,
 } from '@aws-sdk/client-cloudformation';
 import type { StackSummary } from '@aws-sdk/client-cloudformation';
+// eslint-disable-next-line import/named
 import { DescribeLogGroupsCommand, DescribeLogGroupsCommandInput } from '@aws-sdk/client-cloudwatch-logs';
 import type { LogGroup } from '@aws-sdk/client-cloudwatch-logs';
 import { DescribeTasksCommand, ListClustersCommand, ListTasksCommand } from '@aws-sdk/client-ecs';
@@ -201,9 +202,9 @@ export class TaskService {
   public static async getLocks(): Promise<Array<{ Key: string }>> {
     process.env.AWS_REGION = Input.region;
     if (CloudRunner.buildParameters.storageProvider === 'rclone') {
-      const objects = await (
-        SharedWorkspaceLocking as unknown as { listObjects(prefix: string): Promise<string[]> }
-      ).listObjects('');
+      // eslint-disable-next-line no-unused-vars
+      type ListObjectsFunction = (prefix: string) => Promise<string[]>;
+      const objects = await (SharedWorkspaceLocking as unknown as { listObjects: ListObjectsFunction }).listObjects('');
 
       return objects.map((x: string) => ({ Key: x }));
     }

@@ -38,9 +38,15 @@ export class ContainerHookService {
   hook: after
   commands: |
     if command -v aws > /dev/null 2>&1; then
-      aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile default || true
-      aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile default || true
-      aws configure set region $AWS_DEFAULT_REGION --profile default || true
+      if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile default || true
+      fi
+      if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile default || true
+      fi
+      if [ -n "$AWS_DEFAULT_REGION" ]; then
+        aws configure set region "$AWS_DEFAULT_REGION" --profile default || true
+      fi
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
       aws $ENDPOINT_ARGS s3 cp /data/cache/$CACHE_KEY/build/build-${CloudRunner.buildParameters.buildGuid}.tar${
@@ -68,9 +74,15 @@ export class ContainerHookService {
   commands: |
     mkdir -p /data/cache/$CACHE_KEY/build/
     if command -v aws > /dev/null 2>&1; then
-      aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile default || true
-      aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile default || true
-      aws configure set region $AWS_DEFAULT_REGION --profile default || true
+      if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile default || true
+      fi
+      if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile default || true
+      fi
+      if [ -n "$AWS_DEFAULT_REGION" ]; then
+        aws configure set region "$AWS_DEFAULT_REGION" --profile default || true
+      fi
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
       aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/ || true
@@ -132,9 +144,15 @@ export class ContainerHookService {
   hook: after
   commands: |
     if command -v aws > /dev/null 2>&1; then
-      aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile default || true
-      aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile default || true
-      aws configure set region $AWS_DEFAULT_REGION --profile default || true
+      if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile default || true
+      fi
+      if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile default || true
+      fi
+      if [ -n "$AWS_DEFAULT_REGION" ]; then
+        aws configure set region "$AWS_DEFAULT_REGION" --profile default || true
+      fi
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
       aws $ENDPOINT_ARGS s3 cp --recursive /data/cache/$CACHE_KEY/lfs s3://${
@@ -164,9 +182,15 @@ export class ContainerHookService {
     mkdir -p /data/cache/$CACHE_KEY/Library/
     mkdir -p /data/cache/$CACHE_KEY/lfs/
     if command -v aws > /dev/null 2>&1; then
-      aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile default || true
-      aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile default || true
-      aws configure set region $AWS_DEFAULT_REGION --profile default || true
+      if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile default || true
+      fi
+      if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile default || true
+      fi
+      if [ -n "$AWS_DEFAULT_REGION" ]; then
+        aws configure set region "$AWS_DEFAULT_REGION" --profile default || true
+      fi
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
       aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/ || true

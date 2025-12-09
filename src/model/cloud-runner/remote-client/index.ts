@@ -80,81 +80,87 @@ export class RemoteClient {
 
   @CliFunction(`remote-cli-post-build`, `runs a cloud runner build`)
   public static async remoteClientPostBuild(): Promise<string> {
-    RemoteClientLogger.log(`Running POST build tasks`);
-
-    // Ensure cache key is present in logs for assertions
-    RemoteClientLogger.log(`CACHE_KEY=${CloudRunner.buildParameters.cacheKey}`);
-    CloudRunnerLogger.log(`${CloudRunner.buildParameters.cacheKey}`);
-
-    // Guard: only push Library cache if the folder exists and has contents
     try {
-      const libraryFolderHost = CloudRunnerFolders.libraryFolderAbsolute;
-      if (fs.existsSync(libraryFolderHost)) {
-        let libraryEntries: string[] = [];
-        try {
-          libraryEntries = await fs.promises.readdir(libraryFolderHost);
-        } catch {
-          libraryEntries = [];
-        }
-        if (libraryEntries.length > 0) {
-          await Caching.PushToCache(
-            CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/Library`),
-            CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.libraryFolderAbsolute),
-            `lib-${CloudRunner.buildParameters.buildGuid}`,
-          );
+      RemoteClientLogger.log(`Running POST build tasks`);
+
+      // Ensure cache key is present in logs for assertions
+      RemoteClientLogger.log(`CACHE_KEY=${CloudRunner.buildParameters.cacheKey}`);
+      CloudRunnerLogger.log(`${CloudRunner.buildParameters.cacheKey}`);
+
+      // Guard: only push Library cache if the folder exists and has contents
+      try {
+        const libraryFolderHost = CloudRunnerFolders.libraryFolderAbsolute;
+        if (fs.existsSync(libraryFolderHost)) {
+          let libraryEntries: string[] = [];
+          try {
+            libraryEntries = await fs.promises.readdir(libraryFolderHost);
+          } catch {
+            libraryEntries = [];
+          }
+          if (libraryEntries.length > 0) {
+            await Caching.PushToCache(
+              CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/Library`),
+              CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.libraryFolderAbsolute),
+              `lib-${CloudRunner.buildParameters.buildGuid}`,
+            );
+          } else {
+            RemoteClientLogger.log(`Skipping Library cache push (folder is empty)`);
+          }
         } else {
-          RemoteClientLogger.log(`Skipping Library cache push (folder is empty)`);
+          RemoteClientLogger.log(`Skipping Library cache push (folder missing)`);
         }
-      } else {
-        RemoteClientLogger.log(`Skipping Library cache push (folder missing)`);
+      } catch (error: any) {
+        RemoteClientLogger.logWarning(`Library cache push skipped with error: ${error.message}`);
       }
-    } catch (error: any) {
-      RemoteClientLogger.logWarning(`Library cache push skipped with error: ${error.message}`);
-    }
 
-    // Guard: only push Build cache if the folder exists and has contents
-    try {
-      const buildFolderHost = CloudRunnerFolders.projectBuildFolderAbsolute;
-      if (fs.existsSync(buildFolderHost)) {
-        let buildEntries: string[] = [];
-        try {
-          buildEntries = await fs.promises.readdir(buildFolderHost);
-        } catch {
-          buildEntries = [];
-        }
-        if (buildEntries.length > 0) {
-          await Caching.PushToCache(
-            CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/build`),
-            CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.projectBuildFolderAbsolute),
-            `build-${CloudRunner.buildParameters.buildGuid}`,
-          );
+      // Guard: only push Build cache if the folder exists and has contents
+      try {
+        const buildFolderHost = CloudRunnerFolders.projectBuildFolderAbsolute;
+        if (fs.existsSync(buildFolderHost)) {
+          let buildEntries: string[] = [];
+          try {
+            buildEntries = await fs.promises.readdir(buildFolderHost);
+          } catch {
+            buildEntries = [];
+          }
+          if (buildEntries.length > 0) {
+            await Caching.PushToCache(
+              CloudRunnerFolders.ToLinuxFolder(`${CloudRunnerFolders.cacheFolderForCacheKeyFull}/build`),
+              CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.projectBuildFolderAbsolute),
+              `build-${CloudRunner.buildParameters.buildGuid}`,
+            );
+          } else {
+            RemoteClientLogger.log(`Skipping Build cache push (folder is empty)`);
+          }
         } else {
-          RemoteClientLogger.log(`Skipping Build cache push (folder is empty)`);
+          RemoteClientLogger.log(`Skipping Build cache push (folder missing)`);
         }
-      } else {
-        RemoteClientLogger.log(`Skipping Build cache push (folder missing)`);
+      } catch (error: any) {
+        RemoteClientLogger.logWarning(`Build cache push skipped with error: ${error.message}`);
       }
+
+      if (!BuildParameters.shouldUseRetainedWorkspaceMode(CloudRunner.buildParameters)) {
+        const uniqueJobFolderLinux = CloudRunnerFolders.ToLinuxFolder(
+          CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
+        );
+        if (fs.existsSync(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute) || fs.existsSync(uniqueJobFolderLinux)) {
+          await CloudRunnerSystem.Run(`rm -r ${uniqueJobFolderLinux} || true`);
+        } else {
+          RemoteClientLogger.log(`Skipping cleanup; unique job folder missing`);
+        }
+      }
+
+      await RemoteClient.runCustomHookFiles(`after-build`);
+
+      // WIP - need to give the pod permissions to create config map
+      await RemoteClientLogger.handleLogManagementPostJob();
     } catch (error: any) {
-      RemoteClientLogger.logWarning(`Build cache push skipped with error: ${error.message}`);
+      // Log error but don't fail - post-build tasks are best-effort
+      RemoteClientLogger.logWarning(`Post-build task error: ${error.message}`);
+      CloudRunnerLogger.log(`Post-build task error: ${error.message}`);
     }
 
-    if (!BuildParameters.shouldUseRetainedWorkspaceMode(CloudRunner.buildParameters)) {
-      const uniqueJobFolderLinux = CloudRunnerFolders.ToLinuxFolder(
-        CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
-      );
-      if (fs.existsSync(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute) || fs.existsSync(uniqueJobFolderLinux)) {
-        await CloudRunnerSystem.Run(`rm -r ${uniqueJobFolderLinux} || true`);
-      } else {
-        RemoteClientLogger.log(`Skipping cleanup; unique job folder missing`);
-      }
-    }
-
-    await RemoteClient.runCustomHookFiles(`after-build`);
-
-    // WIP - need to give the pod permissions to create config map
-    await RemoteClientLogger.handleLogManagementPostJob();
-
-    // Ensure success marker is present in logs for tests
+    // Ensure success marker is always present in logs for tests, even if post-build tasks failed
     // For K8s, kubectl logs reads from stdout/stderr, so we must write to stdout
     // For all providers, we write to stdout so it gets piped through the log stream
     // The log stream will capture it and add it to BuildResults

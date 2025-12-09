@@ -178,7 +178,10 @@ echo "CACHE_KEY=$CACHE_KEY"`;
       tar -cf "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" --files-from /dev/null || touch "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar"
     fi
     # Run post-build tasks and pipe output through log stream to capture "Activation successful"
+    # Use set +e to allow the command to fail without exiting the script, then restore set -e behavior
+    set +e
     node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "Post-build command completed with warnings"
+    set -e
     # Write end marker and pipe through log stream
     echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
     echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt

@@ -135,6 +135,128 @@ jobs:
           echo "Cleaning up disk space on k3d node..."
           docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes || true" 2>/dev/null || true
           docker exec k3d-unity-builder-agent-0 sh -c "df -h" 2>/dev/null || true
+      - name: Run cloud-runner-image test (validate image creation)
+        timeout-minutes: 10
+        run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: k8s
+          containerCpu: '1000'
+          containerMemory: '1024'
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up K8s test resources
+        run: |
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+      - name: Run cloud-runner-kubernetes test (simple K8s build validation)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-kubernetes" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: k8s
+          ENABLE_K8S_E2E: 'true'
+          containerCpu: '1000'
+          containerMemory: '1024'
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up K8s test resources
+        run: |
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+      - name: Run cloud-runner-s3-steps test (validate S3 operations with K8s)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: k8s
+          AWS_STACK_NAME: game-ci-team-pipelines
+          containerCpu: '1000'
+          containerMemory: '1024'
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up K8s test resources
+        run: |
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          sleep 3
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
       - name: Run cloud-runner-end2end-caching test
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
@@ -216,31 +338,6 @@ jobs:
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
-      - name: Run cloud-runner-hooks test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: k8s
-          containerCpu: '512'
-          containerMemory: '512'
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_S3_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
   localstack:
     name: Cloud Runner Tests (LocalStack)
     runs-on: ubuntu-latest
@@ -298,6 +395,123 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
+      - name: Run cloud-runner-image test (validate image creation)
+        timeout-minutes: 10
+        run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-environment test (validate environment variables)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-s3-steps test (validate S3 operations)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_STACK_NAME: game-ci-team-pipelines
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-hooks test (validate hooks functionality)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
       - name: Run cloud-runner-end2end-caching test
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
@@ -315,6 +529,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space

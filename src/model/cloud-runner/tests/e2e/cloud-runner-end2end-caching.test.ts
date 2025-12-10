@@ -22,7 +22,7 @@ describe('Cloud Runner Caching', () => {
   setups();
   if (CloudRunnerOptions.cloudRunnerDebug) {
     it('Run one build it should not use cache, run subsequent build which should use cache', async () => {
-      const overrides = {
+      const overrides: any = {
         versioning: 'None',
         image: 'ubuntu',
         projectPath: 'test-project',
@@ -33,7 +33,13 @@ describe('Cloud Runner Caching', () => {
         cloudRunnerBranch: `cloud-runner-develop`,
         cloudRunnerDebug: true,
       };
-      if (CloudRunnerOptions.providerStrategy === `k8s`) {
+      // For AWS LocalStack tests, explicitly set provider strategy to 'aws'
+      // This ensures we use AWS LocalStack instead of defaulting to local-docker
+      if (process.env.AWS_S3_ENDPOINT && process.env.AWS_S3_ENDPOINT.includes('localhost')) {
+        overrides.providerStrategy = 'aws';
+        overrides.containerHookFiles += `,aws-s3-pull-cache,aws-s3-upload-cache`;
+      }
+      if (CloudRunnerOptions.providerStrategy === `k8s` || overrides.providerStrategy === `k8s`) {
         overrides.containerHookFiles += `,aws-s3-pull-cache,aws-s3-upload-cache`;
       }
       const buildParameter = await CreateParameters(overrides);

@@ -173,7 +173,16 @@ export class RemoteClient {
     // This ensures the message is captured in BuildResults for all providers
     // Use synchronous write and ensure newline is included for proper flushing
     process.stdout.write(`${successMessage}\n`, 'utf8');
-    
+
+    // For K8s, also write directly to stdout (not through pipe) to ensure kubectl logs captures it
+    // This is critical because kubectl logs reads from stdout, and the pipe might not process
+    // the message in time before the container exits
+    if (CloudRunnerOptions.providerStrategy === 'k8s') {
+      // Write directly to stdout so kubectl logs can capture it immediately
+      // This bypasses the pipe to ensure the message is captured even if the pipe fails
+      process.stdout.write(`${successMessage}\n`, 'utf8');
+    }
+
     // Ensure stdout is flushed before process exits (critical for K8s where process might exit quickly)
     // For non-TTY streams, we need to explicitly ensure the write completes
     if (!process.stdout.isTTY) {

@@ -183,8 +183,17 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "Post-build command completed with warnings"
     set -e
     # Write end marker and pipe through log stream
-    echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
-    echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
+    # Use set +e to prevent failure if builder path doesn't exist (builder might have been cleaned up)
+    set +e
+    if [ -f "${builderPath}" ]; then
+      echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "end of cloud runner job" >> /home/job-log.txt
+      echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "---${CloudRunner.buildParameters.logId}" >> /home/job-log.txt
+    else
+      # Builder path doesn't exist, write directly to log file
+      echo "end of cloud runner job" >> /home/job-log.txt
+      echo "---${CloudRunner.buildParameters.logId}" >> /home/job-log.txt
+    fi
+    set -e
     # Mirror cache back into workspace for test assertions
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/Library"
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build"

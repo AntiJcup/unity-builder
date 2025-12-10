@@ -171,11 +171,20 @@ export class RemoteClient {
 
     // Write to stdout so it gets piped through remote-cli-log-stream when invoked via pipe
     // This ensures the message is captured in BuildResults for all providers
-    // Stdout flushes automatically on newline
-    process.stdout.write(`${successMessage}\n`);
+    // Use synchronous write and ensure newline is included for proper flushing
+    process.stdout.write(`${successMessage}\n`, 'utf8');
+    
+    // Ensure stdout is flushed before process exits (critical for K8s where process might exit quickly)
+    // For non-TTY streams, we need to explicitly ensure the write completes
+    if (!process.stdout.isTTY) {
+      // Give the pipe a moment to process the write
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
 
     // Also log via CloudRunnerLogger and RemoteClientLogger for GitHub Actions and log file
     // This ensures the message appears in log files for providers that read from log files
+    // RemoteClientLogger.log writes directly to the log file, which is important for providers
+    // that read from the log file rather than stdout
     RemoteClientLogger.log(successMessage);
     CloudRunnerLogger.log(successMessage);
 

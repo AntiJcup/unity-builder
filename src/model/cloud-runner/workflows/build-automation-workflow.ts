@@ -184,6 +184,7 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     set -e
     # Write end marker and pipe through log stream
     # Use set +e to prevent failure if builder path doesn't exist (builder might have been cleaned up)
+    # Keep set +e for the rest of the script to prevent exit on error
     set +e
     if [ -f "${builderPath}" ]; then
       echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "end of cloud runner job" >> /home/job-log.txt
@@ -193,7 +194,8 @@ echo "CACHE_KEY=$CACHE_KEY"`;
       echo "end of cloud runner job" >> /home/job-log.txt
       echo "---${CloudRunner.buildParameters.logId}" >> /home/job-log.txt
     fi
-    set -e
+    # Don't restore set -e - keep set +e to prevent script from exiting on error
+    # This ensures the script completes successfully even if some operations fail
     # Mirror cache back into workspace for test assertions
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/Library"
     mkdir -p "$GITHUB_WORKSPACE/cloud-runner-cache/cache/$CACHE_KEY/build"

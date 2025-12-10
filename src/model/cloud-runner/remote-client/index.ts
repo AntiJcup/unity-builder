@@ -169,18 +169,28 @@ export class RemoteClient {
     // The log stream will capture it and add it to BuildResults
     const successMessage = `Activation successful`;
 
+    // Write directly to log file first to ensure it's captured even if pipe fails
+    // This is critical for all providers, especially K8s where timing matters
+    try {
+      const logFilePath = CloudRunner.isCloudRunnerEnvironment
+        ? `/home/job-log.txt`
+        : path.join(process.cwd(), 'temp', 'job-log.txt');
+      if (fs.existsSync(path.dirname(logFilePath))) {
+        fs.appendFileSync(logFilePath, `${successMessage}\n`);
+      }
+    } catch (error) {
+      // If direct file write fails, continue with other methods
+    }
+
     // Write to stdout so it gets piped through remote-cli-log-stream when invoked via pipe
     // This ensures the message is captured in BuildResults for all providers
     // Use synchronous write and ensure newline is included for proper flushing
     process.stdout.write(`${successMessage}\n`, 'utf8');
 
-    // For K8s, also write directly to stdout (not through pipe) to ensure kubectl logs captures it
-    // This is critical because kubectl logs reads from stdout, and the pipe might not process
-    // the message in time before the container exits
+    // For K8s, also write to stderr as a backup since kubectl logs reads from both stdout and stderr
+    // This ensures the message is captured even if stdout pipe has issues
     if (CloudRunnerOptions.providerStrategy === 'k8s') {
-      // Write directly to stdout so kubectl logs can capture it immediately
-      // This bypasses the pipe to ensure the message is captured even if the pipe fails
-      process.stdout.write(`${successMessage}\n`, 'utf8');
+      process.stderr.write(`${successMessage}\n`, 'utf8');
     }
 
     // Ensure stdout is flushed before process exits (critical for K8s where process might exit quickly)

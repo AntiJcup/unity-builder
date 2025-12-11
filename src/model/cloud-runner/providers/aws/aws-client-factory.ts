@@ -13,11 +13,29 @@ export class AwsClientFactory {
   private static cloudWatchLogs: CloudWatchLogs;
   private static s3: S3;
 
+  private static getCredentials() {
+    // Explicitly provide credentials from environment variables for LocalStack compatibility
+    // LocalStack accepts any credentials, but the AWS SDK needs them to be explicitly set
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (accessKeyId && secretAccessKey) {
+      return {
+        accessKeyId,
+        secretAccessKey,
+      };
+    }
+
+    // Return undefined to let AWS SDK use default credential chain
+    return undefined;
+  }
+
   static getCloudFormation(): CloudFormation {
     if (!this.cloudFormation) {
       this.cloudFormation = new CloudFormation({
         region: Input.region,
         endpoint: CloudRunnerOptions.awsCloudFormationEndpoint,
+        credentials: AwsClientFactory.getCredentials(),
       });
     }
 
@@ -29,6 +47,7 @@ export class AwsClientFactory {
       this.ecs = new ECS({
         region: Input.region,
         endpoint: CloudRunnerOptions.awsEcsEndpoint,
+        credentials: AwsClientFactory.getCredentials(),
       });
     }
 
@@ -40,6 +59,7 @@ export class AwsClientFactory {
       this.kinesis = new Kinesis({
         region: Input.region,
         endpoint: CloudRunnerOptions.awsKinesisEndpoint,
+        credentials: AwsClientFactory.getCredentials(),
       });
     }
 
@@ -51,6 +71,7 @@ export class AwsClientFactory {
       this.cloudWatchLogs = new CloudWatchLogs({
         region: Input.region,
         endpoint: CloudRunnerOptions.awsCloudWatchLogsEndpoint,
+        credentials: AwsClientFactory.getCredentials(),
       });
     }
 
@@ -63,6 +84,7 @@ export class AwsClientFactory {
         region: Input.region,
         endpoint: CloudRunnerOptions.awsS3Endpoint,
         forcePathStyle: true,
+        credentials: AwsClientFactory.getCredentials(),
       });
     }
 

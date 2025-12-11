@@ -103,14 +103,18 @@ commands: echo "test"`;
       CloudRunnerLogger.log(`run 2 succeeded`);
 
       const buildContainsBuildSucceeded = results2.includes('Build succeeded');
-      const buildContainsPreBuildHookRunMessage = results2.includes('before-build hook test!');
+      const buildContainsPreBuildHookRunMessage = results2.includes('before-build hook test!!');
       const buildContainsPostBuildHookRunMessage = results2.includes('after-build hook test!');
 
       const buildContainsPreBuildStepMessage = results2.includes('before-build step test!');
       const buildContainsPostBuildStepMessage = results2.includes('after-build step test!');
 
-      // Skip "Build succeeded" check for local-docker when using ubuntu image (Unity doesn't run)
-      if (CloudRunnerOptions.providerStrategy !== 'local' && CloudRunnerOptions.providerStrategy !== 'local-docker') {
+      // Skip "Build succeeded" check for local-docker and aws when using ubuntu image (Unity doesn't run)
+      if (
+        CloudRunnerOptions.providerStrategy !== 'local' &&
+        CloudRunnerOptions.providerStrategy !== 'local-docker' &&
+        CloudRunnerOptions.providerStrategy !== 'aws'
+      ) {
         expect(buildContainsBuildSucceeded).toBeTruthy();
       }
       expect(buildContainsPreBuildHookRunMessage).toBeTruthy();

@@ -178,7 +178,7 @@ export class RemoteClient {
       if (fs.existsSync(path.dirname(logFilePath))) {
         fs.appendFileSync(logFilePath, `${successMessage}\n`);
       }
-    } catch (error) {
+    } catch {
       // If direct file write fails, continue with other methods
     }
 

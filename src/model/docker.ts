@@ -59,15 +59,15 @@ class Docker {
 
     // Check if host.docker.internal is needed (for LocalStack access from containers)
     // Add host mapping if any environment variable contains host.docker.internal
-    const envVarString = ImageEnvironmentFactory.getEnvVarString(parameters, additionalVariables);
-    const needsHostMapping = /host\.docker\.internal/i.test(envVarString);
+    const environmentVariableString = ImageEnvironmentFactory.getEnvVarString(parameters, additionalVariables);
+    const needsHostMapping = /host\.docker\.internal/i.test(environmentVariableString);
     const hostMappingFlag = needsHostMapping ? `--add-host=host.docker.internal:host-gateway` : '';
 
     return `docker run \
             --workdir ${dockerWorkspacePath} \
             --rm \
             ${hostMappingFlag} \
-            ${envVarString} \
+            ${environmentVariableString} \
             --env GITHUB_WORKSPACE=${dockerWorkspacePath} \
             --env GIT_CONFIG_EXTENSIONS \
             ${gitPrivateToken ? `--env GIT_PRIVATE_TOKEN="${gitPrivateToken}"` : ''} \

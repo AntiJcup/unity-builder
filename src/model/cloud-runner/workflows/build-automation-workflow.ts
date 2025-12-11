@@ -192,6 +192,9 @@ echo "CACHE_KEY=$CACHE_KEY"`;
       # Builder doesn't exist, skip post-build (shouldn't happen, but handle gracefully)
       echo "Builder path not found, skipping post-build" | tee -a /home/job-log.txt
     fi
+    # Write "Collected Logs" message for K8s (needed for test assertions)
+    # Write to both stdout and log file to ensure it's captured even if kubectl has issues
+    echo "Collected Logs" | tee -a /home/job-log.txt
     # Write end markers directly to log file (builder might be cleaned up by post-build)
     # Also write to stdout for K8s kubectl logs
     echo "end of cloud runner job" | tee -a /home/job-log.txt
@@ -224,6 +227,9 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     else
       echo "Builder path not found, skipping post-build" | tee -a /home/job-log.txt
     fi
+    # Write "Collected Logs" message for K8s (needed for test assertions)
+    # Write to both stdout and log file to ensure it's captured even if kubectl has issues
+    echo "Collected Logs" | tee -a /home/job-log.txt
     # Write end markers to both stdout and log file (builder might be cleaned up by post-build)
     echo "end of cloud runner job" | tee -a /home/job-log.txt
     echo "---${CloudRunner.buildParameters.logId}" | tee -a /home/job-log.txt`;

@@ -91,6 +91,7 @@ class LocalDockerCloudRunner implements ProviderInterface {
     for (const x of secrets) {
       content.push({ name: x.EnvironmentVariable, value: x.ParameterValue });
     }
+
     // Replace localhost with host.docker.internal for LocalStack endpoints (similar to K8s)
     // This allows Docker containers to access LocalStack running on the host
     const endpointEnvironmentNames = new Set([
@@ -114,9 +115,7 @@ class LocalDockerCloudRunner implements ProviderInterface {
         value = value
           .replace('http://localhost', 'http://host.docker.internal')
           .replace('http://127.0.0.1', 'http://host.docker.internal');
-        CloudRunnerLogger.log(
-          `Replaced localhost with host.docker.internal for ${x.name}: ${value}`,
-        );
+        CloudRunnerLogger.log(`Replaced localhost with host.docker.internal for ${x.name}: ${value}`);
       }
       content.push({ name: x.name, value });
     }
@@ -149,6 +148,9 @@ ${CommandHookService.ApplyHooksToCommands(commands, this.buildParameters)}
 if [ -d "${sharedFolder}cache" ]; then
   cp -a ${sharedFolder}cache/. /github/workspace/cloud-runner-cache/cache/ || true
 fi
+# Copy test files from /data/ root to workspace for test assertions
+# This allows tests to write files to /data/ and have them available in the workspace
+find ${sharedFolder} -maxdepth 1 -type f -name "test-*" -exec cp -a {} /github/workspace/cloud-runner-cache/ \\; || true
 `;
     writeFileSync(`${workspace}/${entrypointFilePath}`, fileContents, {
       flag: 'w',

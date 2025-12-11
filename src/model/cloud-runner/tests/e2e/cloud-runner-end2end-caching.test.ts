@@ -33,6 +33,7 @@ describe('Cloud Runner Caching', () => {
         cloudRunnerBranch: `cloud-runner-develop`,
         cloudRunnerDebug: true,
       };
+
       // For AWS LocalStack tests, explicitly set provider strategy to 'aws'
       // This ensures we use AWS LocalStack instead of defaulting to local-docker
       if (process.env.AWS_S3_ENDPOINT && process.env.AWS_S3_ENDPOINT.includes('localhost')) {

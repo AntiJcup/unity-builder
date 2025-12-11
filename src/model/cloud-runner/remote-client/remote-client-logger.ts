@@ -59,10 +59,11 @@ export class RemoteClientLogger {
     // Write multiple times to increase chance of capture if kubectl is having issues
     if (CloudRunnerOptions.providerStrategy === 'k8s') {
       // Write to stdout multiple times to increase chance of capture
-      for (let i = 0; i < 3; i++) {
+      for (let index = 0; index < 3; index++) {
         process.stdout.write(`${collectedLogsMessage}\n`, 'utf8');
         process.stderr.write(`${collectedLogsMessage}\n`, 'utf8');
       }
+
       // Ensure stdout/stderr are flushed
       if (!process.stdout.isTTY) {
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -82,11 +83,11 @@ export class RemoteClientLogger {
 
       // check if CloudRunner.isCloudRunnerEnvironment is true, log
       if (!CloudRunner.isCloudRunnerEnvironment) {
-        const notCloudEnvMessage = `Cloud Runner is not running in a cloud environment, not collecting logs`;
+        const notCloudEnvironmentMessage = `Cloud Runner is not running in a cloud environment, not collecting logs`;
         if (CloudRunnerOptions.providerStrategy === 'k8s') {
-          process.stdout.write(`${notCloudEnvMessage}\n`, 'utf8');
+          process.stdout.write(`${notCloudEnvironmentMessage}\n`, 'utf8');
         }
-        CloudRunnerLogger.log(notCloudEnvMessage);
+        CloudRunnerLogger.log(notCloudEnvironmentMessage);
       }
 
       return;

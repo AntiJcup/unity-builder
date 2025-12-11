@@ -728,6 +728,230 @@ jobs:
           AWS_ENDPOINT_URL: http://localhost:4566
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+  localDocker:
+    name: Cloud Runner Tests (Local Docker with LocalStack S3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+      - name: Clean up disk space before tests
+        run: |
+          # Clean up any leftover cache files from previous runs
+          rm -rf ./cloud-runner-cache/* || true
+          # Clean up system caches and temporary files
+          sudo apt-get clean || true
+          docker system prune -f || true
+          # Show available disk space
+          df -h
+      - name: Start LocalStack (S3)
+        uses: localstack/setup-localstack@v0.2.4
+        with:
+          install-awslocal: true
+      - name: Verify LocalStack is running
+        run: |
+          echo "Checking LocalStack status..."
+          curl -s http://localhost:4566/_localstack/health | head -10 || echo "LocalStack health check failed"
+          # Check if LocalStack container is running
+          docker ps | grep localstack || echo "No LocalStack container found"
+      - name: Create S3 bucket for tests
+        run: |
+          awslocal s3 mb s3://$AWS_STACK_NAME || true
+          awslocal s3 ls
+      - run: yarn install --frozen-lockfile
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-image test
+        timeout-minutes: 10
+        run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-hooks test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-local-persistence test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-local-persistence" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-locking-core test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-locking-core" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-locking-get-locked test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-locking-get-locked" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-caching test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-caching" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-github-checks test
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-github-checks" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-s3-steps test (LocalStack S3 with local-docker)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          AWS_STACK_NAME: game-ci-team-pipelines
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
+      - name: Run cloud-runner-end2end-caching test (LocalStack S3 with local-docker)
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          AWS_STACK_NAME: game-ci-team-pipelines
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_S3_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
   # Commented out: Using LocalStack tests instead of real AWS
   # aws:
   #   name: Cloud Runner Tests (AWS)

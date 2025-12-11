@@ -177,23 +177,25 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     if [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" ] && [ ! -f "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar.lz4" ]; then
       tar -cf "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar" --files-from /dev/null || touch "/data/cache/$CACHE_KEY/build/build-$BUILD_GUID.tar"
     fi
-    # Run post-build tasks and pipe output through log stream to capture "Activation successful"
-    # Use set +e to allow the command to fail without exiting the script, then restore set -e behavior
+    # Run post-build tasks and capture output
+    # Note: Post-build may clean up the builder directory, so we write output directly to log file
+    # Use set +e to allow the command to fail without exiting the script
     set +e
-    node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "Post-build command completed with warnings"
-    set -e
-    # Write end marker and pipe through log stream
-    # Use set +e to prevent failure if builder path doesn't exist (builder might have been cleaned up)
-    # Keep set +e for the rest of the script to prevent exit on error
-    set +e
+    # Run post-build and write output to both stdout (for K8s kubectl logs) and log file
+    # For local-docker, stdout is captured by the log stream mechanism
     if [ -f "${builderPath}" ]; then
-      echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "end of cloud runner job" >> /home/job-log.txt
-      echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || echo "---${CloudRunner.buildParameters.logId}" >> /home/job-log.txt
+      # Use tee to write to both stdout and log file, ensuring output is captured
+      # For K8s, kubectl logs reads from stdout, so we need stdout
+      # For local-docker, the log file is read directly
+      node ${builderPath} -m remote-cli-post-build 2>&1 | tee -a /home/job-log.txt || echo "Post-build command completed with warnings" | tee -a /home/job-log.txt
     else
-      # Builder path doesn't exist, write directly to log file
-      echo "end of cloud runner job" >> /home/job-log.txt
-      echo "---${CloudRunner.buildParameters.logId}" >> /home/job-log.txt
+      # Builder doesn't exist, skip post-build (shouldn't happen, but handle gracefully)
+      echo "Builder path not found, skipping post-build" | tee -a /home/job-log.txt
     fi
+    # Write end markers directly to log file (builder might be cleaned up by post-build)
+    # Also write to stdout for K8s kubectl logs
+    echo "end of cloud runner job" | tee -a /home/job-log.txt
+    echo "---${CloudRunner.buildParameters.logId}" | tee -a /home/job-log.txt
     # Don't restore set -e - keep set +e to prevent script from exiting on error
     # This ensures the script completes successfully even if some operations fail
     # Mirror cache back into workspace for test assertions
@@ -213,11 +215,18 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     chmod -R +x "/entrypoint.sh"
     chmod -R +x "/steps"
     { echo "game ci start"; echo "game ci start" >> /home/job-log.txt; echo "CACHE_KEY=$CACHE_KEY"; echo "$CACHE_KEY"; if [ -n "$LOCKED_WORKSPACE" ]; then echo "Retained Workspace: true"; fi; if [ -n "$LOCKED_WORKSPACE" ] && [ -d "$GITHUB_WORKSPACE/.git" ]; then echo "Retained Workspace Already Exists!"; fi; /entrypoint.sh; } | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
-    # Run post-build and ensure output is captured in logs
-    node ${builderPath} -m remote-cli-post-build | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt || true
-    # Write end marker through log stream to ensure it's captured in BuildResults
-    echo "end of cloud runner job" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt
-    echo "---${CloudRunner.buildParameters.logId}" | node ${builderPath} -m remote-cli-log-stream --logFile /home/job-log.txt`;
+    # Run post-build and capture output to both stdout (for kubectl logs) and log file
+    # Note: Post-build may clean up the builder directory, so write output directly
+    set +e
+    if [ -f "${builderPath}" ]; then
+      # Use tee to write to both stdout and log file for K8s kubectl logs
+      node ${builderPath} -m remote-cli-post-build 2>&1 | tee -a /home/job-log.txt || echo "Post-build command completed with warnings" | tee -a /home/job-log.txt
+    else
+      echo "Builder path not found, skipping post-build" | tee -a /home/job-log.txt
+    fi
+    # Write end markers to both stdout and log file (builder might be cleaned up by post-build)
+    echo "end of cloud runner job" | tee -a /home/job-log.txt
+    echo "---${CloudRunner.buildParameters.logId}" | tee -a /home/job-log.txt`;
     }
 
     // prettier-ignore

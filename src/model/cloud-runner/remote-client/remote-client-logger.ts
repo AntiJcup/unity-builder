@@ -48,20 +48,42 @@ export class RemoteClientLogger {
     if (CloudRunnerOptions.providerStrategy !== 'k8s') {
       return;
     }
-    CloudRunnerLogger.log(`Collected Logs`);
+    const collectedLogsMessage = `Collected Logs`;
+
+    // For K8s, write to stdout so kubectl logs can capture it
+    // This is critical because kubectl logs reads from stdout/stderr, not from GitHub Actions logs
+    if (CloudRunnerOptions.providerStrategy === 'k8s') {
+      process.stdout.write(`${collectedLogsMessage}\n`, 'utf8');
+      process.stderr.write(`${collectedLogsMessage}\n`, 'utf8');
+    }
+
+    // Also log via CloudRunnerLogger for GitHub Actions
+    CloudRunnerLogger.log(collectedLogsMessage);
 
     // check for log file not existing
     if (!fs.existsSync(RemoteClientLogger.LogFilePath)) {
-      CloudRunnerLogger.log(`Log file does not exist`);
+      const logFileMissingMessage = `Log file does not exist`;
+      if (CloudRunnerOptions.providerStrategy === 'k8s') {
+        process.stdout.write(`${logFileMissingMessage}\n`, 'utf8');
+      }
+      CloudRunnerLogger.log(logFileMissingMessage);
 
       // check if CloudRunner.isCloudRunnerEnvironment is true, log
       if (!CloudRunner.isCloudRunnerEnvironment) {
-        CloudRunnerLogger.log(`Cloud Runner is not running in a cloud environment, not collecting logs`);
+        const notCloudEnvMessage = `Cloud Runner is not running in a cloud environment, not collecting logs`;
+        if (CloudRunnerOptions.providerStrategy === 'k8s') {
+          process.stdout.write(`${notCloudEnvMessage}\n`, 'utf8');
+        }
+        CloudRunnerLogger.log(notCloudEnvMessage);
       }
 
       return;
     }
-    CloudRunnerLogger.log(`Log file exist`);
+    const logFileExistsMessage = `Log file exist`;
+    if (CloudRunnerOptions.providerStrategy === 'k8s') {
+      process.stdout.write(`${logFileExistsMessage}\n`, 'utf8');
+    }
+    CloudRunnerLogger.log(logFileExistsMessage);
     await new Promise((resolve) => setTimeout(resolve, 1));
 
     // let hashedLogs = fs.readFileSync(RemoteClientLogger.LogFilePath).toString();

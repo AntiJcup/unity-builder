@@ -29,8 +29,6 @@ class KubernetesTaskRunner {
         `Streaming logs from pod: ${podName} container: ${containerName} namespace: ${namespace} ${CloudRunner.buildParameters.kubeVolumeSize}/${CloudRunner.buildParameters.containerCpu}/${CloudRunner.buildParameters.containerMemory}`,
       );
       const isRunning = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
-      let extraFlags = ``;
-      extraFlags += isRunning ? ` -f -c ${containerName} -n ${namespace}` : ` --previous -n ${namespace}`;
 
       const callback = (outputChunk: string) => {
         output += outputChunk;
@@ -46,7 +44,14 @@ class KubernetesTaskRunner {
         }
       };
       try {
-        await CloudRunnerSystem.Run(`kubectl logs ${podName}${extraFlags}`, false, true, callback);
+        // Always specify container name explicitly to avoid containerd:// errors
+        // Use -f for running pods, --previous for terminated pods
+        await CloudRunnerSystem.Run(
+          `kubectl logs ${podName} -c ${containerName} -n ${namespace}${isRunning ? ' -f' : ' --previous'}`,
+          false,
+          true,
+          callback,
+        );
       } catch (error: any) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
         const continueStreaming = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);

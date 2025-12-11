@@ -50,11 +50,23 @@ export class RemoteClientLogger {
     }
     const collectedLogsMessage = `Collected Logs`;
 
-    // For K8s, write to stdout so kubectl logs can capture it
+    // Write to log file first so it's captured even if kubectl has issues
+    // This ensures the message is available in BuildResults when logs are read from the file
+    RemoteClientLogger.appendToFile(collectedLogsMessage);
+
+    // For K8s, write to stdout/stderr so kubectl logs can capture it
     // This is critical because kubectl logs reads from stdout/stderr, not from GitHub Actions logs
+    // Write multiple times to increase chance of capture if kubectl is having issues
     if (CloudRunnerOptions.providerStrategy === 'k8s') {
-      process.stdout.write(`${collectedLogsMessage}\n`, 'utf8');
-      process.stderr.write(`${collectedLogsMessage}\n`, 'utf8');
+      // Write to stdout multiple times to increase chance of capture
+      for (let i = 0; i < 3; i++) {
+        process.stdout.write(`${collectedLogsMessage}\n`, 'utf8');
+        process.stderr.write(`${collectedLogsMessage}\n`, 'utf8');
+      }
+      // Ensure stdout/stderr are flushed
+      if (!process.stdout.isTTY) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
     }
 
     // Also log via CloudRunnerLogger for GitHub Actions

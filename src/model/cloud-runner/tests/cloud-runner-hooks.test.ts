@@ -109,7 +109,8 @@ commands: echo "test"`;
       const buildContainsPreBuildStepMessage = results2.includes('before-build step test!');
       const buildContainsPostBuildStepMessage = results2.includes('after-build step test!');
 
-      if (CloudRunnerOptions.providerStrategy !== 'local') {
+      // Skip "Build succeeded" check for local-docker when using ubuntu image (Unity doesn't run)
+      if (CloudRunnerOptions.providerStrategy !== 'local' && CloudRunnerOptions.providerStrategy !== 'local-docker') {
         expect(buildContainsBuildSucceeded).toBeTruthy();
       }
       expect(buildContainsPreBuildHookRunMessage).toBeTruthy();

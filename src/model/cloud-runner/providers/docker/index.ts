@@ -91,8 +91,34 @@ class LocalDockerCloudRunner implements ProviderInterface {
     for (const x of secrets) {
       content.push({ name: x.EnvironmentVariable, value: x.ParameterValue });
     }
+    // Replace localhost with host.docker.internal for LocalStack endpoints (similar to K8s)
+    // This allows Docker containers to access LocalStack running on the host
+    const endpointEnvironmentNames = new Set([
+      'AWS_S3_ENDPOINT',
+      'AWS_ENDPOINT',
+      'AWS_CLOUD_FORMATION_ENDPOINT',
+      'AWS_ECS_ENDPOINT',
+      'AWS_KINESIS_ENDPOINT',
+      'AWS_CLOUD_WATCH_LOGS_ENDPOINT',
+      'INPUT_AWSS3ENDPOINT',
+      'INPUT_AWSENDPOINT',
+    ]);
     for (const x of environment) {
-      content.push({ name: x.name, value: x.value });
+      let value = x.value;
+      if (
+        typeof value === 'string' &&
+        endpointEnvironmentNames.has(x.name) &&
+        (value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'))
+      ) {
+        // Replace localhost with host.docker.internal so containers can access host services
+        value = value
+          .replace('http://localhost', 'http://host.docker.internal')
+          .replace('http://127.0.0.1', 'http://host.docker.internal');
+        CloudRunnerLogger.log(
+          `Replaced localhost with host.docker.internal for ${x.name}: ${value}`,
+        );
+      }
+      content.push({ name: x.name, value });
     }
 
     // if (this.buildParameters?.cloudRunnerIntegrationTests) {

@@ -79,10 +79,12 @@ class KubernetesTaskRunner {
         const isKubectlLogsError =
           errorMessage.includes('unable to retrieve container logs for containerd://') ||
           errorMessage.toLowerCase().includes('unable to retrieve container logs');
-        
+
         if (isKubectlLogsError) {
-          CloudRunnerLogger.log(`Kubectl unable to retrieve logs, attempt ${kubectlLogsFailedCount}/${maxKubectlLogsFailures}`);
-          
+          CloudRunnerLogger.log(
+            `Kubectl unable to retrieve logs, attempt ${kubectlLogsFailedCount}/${maxKubectlLogsFailures}`,
+          );
+
           // If kubectl logs has failed multiple times, try reading the log file directly from the pod
           // This works even if the pod is terminated, as long as it hasn't been deleted
           if (kubectlLogsFailedCount >= maxKubectlLogsFailures && !isRunning && !continueStreaming) {
@@ -91,7 +93,7 @@ class KubernetesTaskRunner {
               // Try to read the log file from the pod
               // Use kubectl exec for running pods, or try to access via PVC if pod is terminated
               let logFileContent = '';
-              
+
               if (isRunning) {
                 // Pod is still running, try exec
                 logFileContent = await CloudRunnerSystem.Run(
@@ -107,7 +109,7 @@ class KubernetesTaskRunner {
                 // and rely on the log file being written to the PVC (if mounted)
                 CloudRunnerLogger.logWarning(`Cannot read log file from terminated pod via exec`);
               }
-              
+
               if (logFileContent && logFileContent.trim()) {
                 CloudRunnerLogger.log(`Successfully read log file from pod (${logFileContent.length} chars)`);
                 // Process the log file content line by line
@@ -122,7 +124,7 @@ class KubernetesTaskRunner {
                     ));
                   }
                 }
-                
+
                 // Check if we got the end of transmission marker
                 if (FollowLogStreamService.DidReceiveEndOfTransmission) {
                   CloudRunnerLogger.log('end of log stream (from log file)');
@@ -271,9 +273,7 @@ class KubernetesTaskRunner {
     // These errors can be added via stderr even when kubectl fails
     // We filter them out so they don't pollute the BuildResults
     const lines = output.split('\n');
-    const filteredLines = lines.filter(
-      (line) => !line.toLowerCase().includes('unable to retrieve container logs'),
-    );
+    const filteredLines = lines.filter((line) => !line.toLowerCase().includes('unable to retrieve container logs'));
     const filteredOutput = filteredLines.join('\n');
 
     // Log if we filtered out significant content

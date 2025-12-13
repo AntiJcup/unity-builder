@@ -220,12 +220,31 @@ class KubernetesTaskRunner {
         CloudRunnerLogger.log('Pod is terminated, reading log file as fallback to capture post-build messages...');
         try {
           // Try to read the log file from the terminated pod
-          // Use kubectl exec with --previous flag or try to access via PVC
-          const logFileContent = await CloudRunnerSystem.Run(
-            `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
-            true,
-            true,
-          );
+          // For killed pods (OOM), kubectl exec might not work, so we try multiple approaches
+          // First try --previous flag for terminated containers, then try without it
+          let logFileContent = '';
+          try {
+            logFileContent = await CloudRunnerSystem.Run(
+              `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+              true,
+              true,
+            );
+          } catch {
+            // If --previous fails, try without it (for recently terminated pods)
+            try {
+              logFileContent = await CloudRunnerSystem.Run(
+                `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+                true,
+                true,
+              );
+            } catch {
+              // If both fail (pod might be killed/OOM), log but continue with existing output
+              CloudRunnerLogger.logWarning(
+                'Could not read log file from terminated pod (may be OOM-killed). Using available logs.',
+              );
+              logFileContent = '';
+            }
+          }
 
           if (logFileContent && logFileContent.trim()) {
             CloudRunnerLogger.log(

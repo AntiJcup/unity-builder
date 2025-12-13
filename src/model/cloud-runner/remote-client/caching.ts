@@ -110,8 +110,30 @@ export class Caching {
             CloudRunnerLogger.log(`Cleanup completed. Checking disk space again...`);
             const diskCheckAfter = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
             CloudRunnerLogger.log(`Disk space after cleanup: ${diskCheckAfter}`);
+
+            // Check disk usage again after cleanup
+            let diskUsageAfterCleanup = 0;
+            try {
+              const usageMatchAfter = diskCheckAfter.match(/(\d+)%/);
+              if (usageMatchAfter) {
+                diskUsageAfterCleanup = Number.parseInt(usageMatchAfter[1], 10);
+              }
+            } catch {
+              // Ignore parsing errors
+            }
+
+            // If disk is still at 100% after cleanup, skip tar operation to prevent hang
+            if (diskUsageAfterCleanup >= 100) {
+              throw new Error(
+                `Cannot create cache archive: disk is still at ${diskUsageAfterCleanup}% after cleanup. Tar operation would hang. Please free up disk space manually.`,
+              );
+            }
           }
         } catch (cleanupError) {
+          // If cleanupError is our disk space error, rethrow it
+          if (cleanupError instanceof Error && cleanupError.message.includes('Cannot create cache archive')) {
+            throw cleanupError;
+          }
           CloudRunnerLogger.log(`Proactive cleanup failed: ${cleanupError}`);
         }
       }
@@ -124,13 +146,32 @@ export class Caching {
       }
 
       try {
-        await CloudRunnerSystem.Run(
-          `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`,
-        );
+        // Add timeout to tar command to prevent hanging when disk is full
+        // Use timeout command with 10 minute limit (600 seconds) if available
+        // Check if timeout command exists, otherwise use regular tar
+        const tarCommand = `tar -cf ${cacheArtifactName}.tar${compressionSuffix} "${path.basename(sourceFolder)}"`;
+        let tarCommandToRun = tarCommand;
+        try {
+          // Check if timeout command is available
+          await CloudRunnerSystem.Run(`which timeout > /dev/null 2>&1`, true, true);
+          // Use timeout if available (600 seconds = 10 minutes)
+          tarCommandToRun = `timeout 600 ${tarCommand}`;
+        } catch {
+          // timeout command not available, use regular tar
+          // Note: This could still hang if disk is full, but the disk space check above should prevent this
+          tarCommandToRun = tarCommand;
+        }
+
+        await CloudRunnerSystem.Run(tarCommandToRun);
       } catch (error: any) {
-        // Check if error is due to disk space
+        // Check if error is due to disk space or timeout
         const errorMessage = error?.message || error?.toString() || '';
-        if (errorMessage.includes('No space left') || errorMessage.includes('Wrote only')) {
+        if (
+          errorMessage.includes('No space left') ||
+          errorMessage.includes('Wrote only') ||
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('Terminated')
+        ) {
           CloudRunnerLogger.log(`Disk space error detected. Attempting aggressive cleanup...`);
 
           // Try to clean up old cache files more aggressively

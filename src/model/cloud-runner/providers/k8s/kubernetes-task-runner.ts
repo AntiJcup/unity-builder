@@ -76,8 +76,9 @@ class KubernetesTaskRunner {
 
         // Filter out kubectl error messages from the error output
         const errorMessage = error?.message || error?.toString() || '';
-        const isKubectlLogsError = errorMessage.includes('unable to retrieve container logs for containerd://') || 
-                                   errorMessage.toLowerCase().includes('unable to retrieve container logs');
+        const isKubectlLogsError =
+          errorMessage.includes('unable to retrieve container logs for containerd://') ||
+          errorMessage.toLowerCase().includes('unable to retrieve container logs');
         
         if (isKubectlLogsError) {
           CloudRunnerLogger.log(`Kubectl unable to retrieve logs, attempt ${kubectlLogsFailedCount}/${maxKubectlLogsFailures}`);
@@ -206,6 +207,64 @@ class KubernetesTaskRunner {
         CloudRunnerLogger.log('end of log stream');
         break;
       }
+    }
+
+    // After kubectl logs loop ends, read log file as fallback to capture any messages
+    // written after kubectl stopped reading (e.g., "Collected Logs" from post-build)
+    // This ensures all log messages are included in BuildResults for test assertions
+    try {
+      const isPodStillRunning = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
+      if (!isPodStillRunning) {
+        CloudRunnerLogger.log('Pod is terminated, reading log file as fallback to capture post-build messages...');
+        try {
+          // Try to read the log file from the terminated pod
+          // Use kubectl exec with --previous flag or try to access via PVC
+          const logFileContent = await CloudRunnerSystem.Run(
+            `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+            true,
+            true,
+          );
+
+          if (logFileContent && logFileContent.trim()) {
+            CloudRunnerLogger.log(
+              `Read log file from pod as fallback (${logFileContent.length} chars) to capture missing messages`,
+            );
+            // Get the lines we already have in output to avoid duplicates
+            const existingLines = new Set(output.split('\n').map((line) => line.trim()));
+            // Process the log file content line by line and add missing lines
+            for (const line of logFileContent.split(`\n`)) {
+              const trimmedLine = line.trim();
+              const lowerLine = trimmedLine.toLowerCase();
+              // Skip empty lines, kubectl errors, and lines we already have
+              if (
+                trimmedLine &&
+                !lowerLine.includes('unable to retrieve container logs') &&
+                !existingLines.has(trimmedLine)
+              ) {
+                // Add missing line to output
+                output += `${line}\n`;
+                // Process through FollowLogStreamService to ensure proper handling
+                ({ shouldReadLogs, shouldCleanup, output } = FollowLogStreamService.handleIteration(
+                  line,
+                  shouldReadLogs,
+                  shouldCleanup,
+                  output,
+                ));
+              }
+            }
+          }
+        } catch (logFileError: any) {
+          CloudRunnerLogger.logWarning(
+            `Could not read log file from pod as fallback: ${logFileError?.message || logFileError}`,
+          );
+          // Continue with existing output - this is a best-effort fallback
+        }
+      }
+    } catch (fallbackError: any) {
+      CloudRunnerLogger.logWarning(
+        `Error checking pod status for log file fallback: ${fallbackError?.message || fallbackError}`,
+      );
+      // Continue with existing output - this is a best-effort fallback
     }
 
     // Filter out kubectl error messages from the final output

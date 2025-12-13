@@ -866,6 +866,16 @@ jobs:
           cloudRunnerTests: true
           versioning: None
           PROVIDER_STRATEGY: local-docker
+          AWS_STACK_NAME: game-ci-team-pipelines
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
+          INPUT_AWSS3ENDPOINT: http://localhost:4566
+          INPUT_AWSENDPOINT: http://localhost:4566
+          AWS_S3_FORCE_PATH_STYLE: 'true'
+          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space

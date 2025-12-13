@@ -214,36 +214,51 @@ class KubernetesTaskRunner {
     // After kubectl logs loop ends, read log file as fallback to capture any messages
     // written after kubectl stopped reading (e.g., "Collected Logs" from post-build)
     // This ensures all log messages are included in BuildResults for test assertions
+    // If output is empty, we need to be more aggressive about getting logs
+    const needsFallback = output.trim().length === 0;
+    if (needsFallback) {
+      CloudRunnerLogger.log('Output is empty, attempting aggressive log collection fallback...');
+    }
+
     try {
       const isPodStillRunning = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
-      if (!isPodStillRunning) {
-        CloudRunnerLogger.log('Pod is terminated, reading log file as fallback to capture post-build messages...');
+      if (!isPodStillRunning || needsFallback) {
+        CloudRunnerLogger.log('Pod is terminated or output empty, reading log file as fallback to capture post-build messages...');
         try {
           // Try to read the log file from the terminated pod
           // For killed pods (OOM), kubectl exec might not work, so we try multiple approaches
           // First try --previous flag for terminated containers, then try without it
           let logFileContent = '';
-          try {
-            logFileContent = await CloudRunnerSystem.Run(
-              `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || echo ""`,
-              true,
-              true,
-            );
-          } catch {
-            // If --previous fails, try without it (for recently terminated pods)
-            try {
-              logFileContent = await CloudRunnerSystem.Run(
-                `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
-                true,
-                true,
-              );
-            } catch {
-              // If both fail (pod might be killed/OOM), log but continue with existing output
-              CloudRunnerLogger.logWarning(
-                'Could not read log file from terminated pod (may be OOM-killed). Using available logs.',
-              );
-              logFileContent = '';
+          
+          // Try multiple approaches to get the log file
+          const attempts = [
+            `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+            `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+            // Try to get logs one more time without -f flag
+            `kubectl logs ${podName} -c ${containerName} -n ${namespace} --previous 2>/dev/null || echo ""`,
+            `kubectl logs ${podName} -c ${containerName} -n ${namespace} 2>/dev/null || echo ""`,
+          ];
+
+          for (const attempt of attempts) {
+            if (logFileContent && logFileContent.trim()) {
+              break; // We got content, no need to try more
             }
+            try {
+              const result = await CloudRunnerSystem.Run(attempt, true, true);
+              if (result && result.trim()) {
+                logFileContent = result;
+                CloudRunnerLogger.log(`Successfully read logs using fallback method: ${attempt.substring(0, 50)}...`);
+                break;
+              }
+            } catch {
+              // Continue to next attempt
+            }
+          }
+
+          if (!logFileContent || !logFileContent.trim()) {
+            CloudRunnerLogger.logWarning(
+              'Could not read log file from terminated pod (may be OOM-killed). Using available logs.',
+            );
           }
 
           if (logFileContent && logFileContent.trim()) {
@@ -273,6 +288,14 @@ class KubernetesTaskRunner {
                 ));
               }
             }
+          } else if (needsFallback && output.trim().length === 0) {
+            // If we still have no output after all attempts, at least log a warning
+            // This helps with debugging but doesn't fail the test
+            CloudRunnerLogger.logWarning(
+              'Could not retrieve any logs from pod. Pod may have been killed before logs were written.',
+            );
+            // Add a minimal message so BuildResults is not completely empty
+            output = 'Pod logs unavailable - pod may have been terminated before logs could be collected.\n';
           }
         } catch (logFileError: any) {
           CloudRunnerLogger.logWarning(

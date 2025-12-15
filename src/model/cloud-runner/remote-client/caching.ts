@@ -149,11 +149,17 @@ export class Caching {
               // Ignore parsing errors
             }
 
-            // If disk is still at 100% after cleanup, skip tar operation to prevent hang
+            // If disk is still at 100% after cleanup, skip tar operation to prevent hang.
+            // Do NOT fail the build here – it's better to skip caching than to fail the job
+            // due to shared CI disk pressure.
             if (diskUsageAfterCleanup >= 100) {
-              throw new Error(
-                `Cannot create cache archive: disk is still at ${diskUsageAfterCleanup}% after cleanup. Tar operation would hang. Please free up disk space manually.`,
-              );
+              const message = `Cannot create cache archive: disk is still at ${diskUsageAfterCleanup}% after cleanup. Tar operation would hang. Skipping cache push; please free up disk space manually if this persists.`;
+              CloudRunnerLogger.logWarning(message);
+              RemoteClientLogger.log(message);
+              // Restore working directory before early return
+              process.chdir(`${startPath}`);
+
+              return;
             }
           }
         } catch (cleanupError) {

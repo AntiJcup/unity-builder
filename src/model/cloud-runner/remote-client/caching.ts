@@ -100,13 +100,40 @@ export class Caching {
         try {
           const cacheParent = path.dirname(cacheFolder);
           if (await fileExists(cacheParent)) {
+            // Try to fix permissions first to avoid permission denied errors
+            await CloudRunnerSystem.Run(
+              `chmod -R u+w ${cacheParent} 2>/dev/null || chown -R $(whoami) ${cacheParent} 2>/dev/null || true`,
+            );
+
             // Remove cache files older than 6 hours (more aggressive than 1 day)
+            // Use multiple methods to handle permission issues
             await CloudRunnerSystem.Run(
               `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
+            );
+            // Try with sudo if available
+            await CloudRunnerSystem.Run(
+              `sudo find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
+            );
+            // As last resort, try to remove files one by one
+            await CloudRunnerSystem.Run(
+              `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -exec rm -f {} + 2>/dev/null || true`,
             );
 
             // Also try to remove old cache directories
             await CloudRunnerSystem.Run(`find ${cacheParent} -type d -empty -delete 2>/dev/null || true`);
+
+            // If disk is still very high (>95%), be even more aggressive
+            if (diskUsagePercent > 95) {
+              CloudRunnerLogger.log(`Disk usage is very high (${diskUsagePercent}%), performing aggressive cleanup...`);
+              // Remove files older than 1 hour
+              await CloudRunnerSystem.Run(
+                `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
+              );
+              await CloudRunnerSystem.Run(
+                `sudo find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
+              );
+            }
+
             CloudRunnerLogger.log(`Cleanup completed. Checking disk space again...`);
             const diskCheckAfter = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
             CloudRunnerLogger.log(`Disk space after cleanup: ${diskCheckAfter}`);
@@ -178,9 +205,22 @@ export class Caching {
           try {
             const cacheParent = path.dirname(cacheFolder);
             if (await fileExists(cacheParent)) {
+              // Try to fix permissions first to avoid permission denied errors
+              await CloudRunnerSystem.Run(
+                `chmod -R u+w ${cacheParent} 2>/dev/null || chown -R $(whoami) ${cacheParent} 2>/dev/null || true`,
+              );
+
               // Remove cache files older than 1 hour (very aggressive)
+              // Use multiple methods to handle permission issues
               await CloudRunnerSystem.Run(
                 `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
+              );
+              await CloudRunnerSystem.Run(
+                `sudo find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
+              );
+              // As last resort, try to remove files one by one
+              await CloudRunnerSystem.Run(
+                `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -exec rm -f {} + 2>/dev/null || true`,
               );
 
               // Remove empty cache directories
@@ -189,9 +229,16 @@ export class Caching {
               // Also try to clean up the entire cache folder if it's getting too large
               const cacheRoot = path.resolve(cacheParent, '..');
               if (await fileExists(cacheRoot)) {
+                // Try to fix permissions for cache root too
+                await CloudRunnerSystem.Run(
+                  `chmod -R u+w ${cacheRoot} 2>/dev/null || chown -R $(whoami) ${cacheRoot} 2>/dev/null || true`,
+                );
                 // Remove cache entries older than 30 minutes
                 await CloudRunnerSystem.Run(
                   `find ${cacheRoot} -name "*.tar*" -type f -mmin +30 -delete 2>/dev/null || true`,
+                );
+                await CloudRunnerSystem.Run(
+                  `sudo find ${cacheRoot} -name "*.tar*" -type f -mmin +30 -delete 2>/dev/null || true`,
                 );
               }
               CloudRunnerLogger.log(`Aggressive cleanup completed. Retrying tar operation...`);

@@ -87,13 +87,26 @@ describe('Cloud Runner Retain Workspace', () => {
           `Cleaning up ./cloud-runner-cache/${path.basename(CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute)}`,
         );
         try {
+          const workspaceCachePath = `./cloud-runner-cache/${path.basename(
+            CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
+          )}`;
+          // Try to fix permissions first to avoid permission denied errors
           await CloudRunnerSystem.Run(
-            `rm -rf ./cloud-runner-cache/${path.basename(
-              CloudRunnerFolders.uniqueCloudRunnerJobFolderAbsolute,
-            )} || true`,
+            `chmod -R u+w ${workspaceCachePath} 2>/dev/null || chown -R $(whoami) ${workspaceCachePath} 2>/dev/null || true`,
           );
+          // Try regular rm first
+          await CloudRunnerSystem.Run(`rm -rf ${workspaceCachePath} 2>/dev/null || true`);
+          // If that fails, try with sudo if available
+          await CloudRunnerSystem.Run(`sudo rm -rf ${workspaceCachePath} 2>/dev/null || true`);
+          // As last resort, try to remove files one by one, ignoring permission errors
+          await CloudRunnerSystem.Run(
+            `find ${workspaceCachePath} -type f -exec rm -f {} + 2>/dev/null || find ${workspaceCachePath} -type f -delete 2>/dev/null || true`,
+          );
+          // Remove empty directories
+          await CloudRunnerSystem.Run(`find ${workspaceCachePath} -type d -empty -delete 2>/dev/null || true`);
         } catch (error: any) {
           CloudRunnerLogger.log(`Failed to cleanup workspace: ${error.message}`);
+          // Don't throw - cleanup failures shouldn't fail the test suite
         }
       }
 
@@ -102,9 +115,24 @@ describe('Cloud Runner Retain Workspace', () => {
       if (fs.existsSync(cachePath)) {
         try {
           CloudRunnerLogger.log(`Cleaning up cache directory: ${cachePath}`);
-          await CloudRunnerSystem.Run(`rm -rf ${cachePath}/* || true`);
+          // Try to change ownership first (if running as root or with sudo)
+          // Then try multiple cleanup methods to handle permission issues
+          await CloudRunnerSystem.Run(
+            `chmod -R u+w ${cachePath} 2>/dev/null || chown -R $(whoami) ${cachePath} 2>/dev/null || true`,
+          );
+          // Try regular rm first
+          await CloudRunnerSystem.Run(`rm -rf ${cachePath}/* 2>/dev/null || true`);
+          // If that fails, try with sudo if available
+          await CloudRunnerSystem.Run(`sudo rm -rf ${cachePath}/* 2>/dev/null || true`);
+          // As last resort, try to remove files one by one, ignoring permission errors
+          await CloudRunnerSystem.Run(
+            `find ${cachePath} -type f -exec rm -f {} + 2>/dev/null || find ${cachePath} -type f -delete 2>/dev/null || true`,
+          );
+          // Remove empty directories
+          await CloudRunnerSystem.Run(`find ${cachePath} -type d -empty -delete 2>/dev/null || true`);
         } catch (error: any) {
           CloudRunnerLogger.log(`Failed to cleanup cache: ${error.message}`);
+          // Don't throw - cleanup failures shouldn't fail the test suite
         }
       }
     });

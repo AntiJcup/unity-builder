@@ -348,11 +348,82 @@ export class Caching {
       await CloudRunnerLogger.log(`cache key ${cacheArtifactName} selection ${cacheSelection}`);
 
       if (await fileExists(`${cacheSelection}.tar${compressionSuffix}`)) {
+        // Check disk space before extraction to prevent hangs
+        let diskUsagePercent = 0;
+        try {
+          const diskCheckOutput = await CloudRunnerSystem.Run(`df . 2>/dev/null || df /data 2>/dev/null || true`);
+          const usageMatch = diskCheckOutput.match(/(\d+)%/);
+          if (usageMatch) {
+            diskUsagePercent = Number.parseInt(usageMatch[1], 10);
+          }
+        } catch {
+          // Ignore disk check errors
+        }
+
+        // If disk is at 100%, skip cache extraction to prevent hangs
+        if (diskUsagePercent >= 100) {
+          const message = `Disk is at ${diskUsagePercent}% - skipping cache extraction to prevent hang. Cache may be incomplete or corrupted.`;
+          CloudRunnerLogger.logWarning(message);
+          RemoteClientLogger.logWarning(message);
+          // Continue without cache - build will proceed without cached Library
+          process.chdir(startPath);
+          return;
+        }
+
+        // Validate tar file integrity before extraction
+        try {
+          // Use tar -t to test the archive without extracting (fast check)
+          // This will fail if the archive is corrupted
+          await CloudRunnerSystem.Run(
+            `tar -tf ${cacheSelection}.tar${compressionSuffix} > /dev/null 2>&1 || (echo "Tar file validation failed" && exit 1)`,
+          );
+        } catch (validationError) {
+          const message = `Cache archive ${cacheSelection}.tar${compressionSuffix} appears to be corrupted or incomplete. Skipping cache extraction.`;
+          CloudRunnerLogger.logWarning(message);
+          RemoteClientLogger.logWarning(message);
+          // Continue without cache - build will proceed without cached Library
+          process.chdir(startPath);
+          return;
+        }
+
         const resultsFolder = `results${CloudRunner.buildParameters.buildGuid}`;
         await CloudRunnerSystem.Run(`mkdir -p ${resultsFolder}`);
         RemoteClientLogger.log(`cache item exists ${cacheFolder}/${cacheSelection}.tar${compressionSuffix}`);
         const fullResultsFolder = path.join(cacheFolder, resultsFolder);
-        await CloudRunnerSystem.Run(`tar -xf ${cacheSelection}.tar${compressionSuffix} -C ${fullResultsFolder}`);
+
+        // Extract with timeout to prevent infinite hangs
+        try {
+          let tarExtractCommand = `tar -xf ${cacheSelection}.tar${compressionSuffix} -C ${fullResultsFolder}`;
+          // Add timeout if available (600 seconds = 10 minutes)
+          try {
+            await CloudRunnerSystem.Run(`which timeout > /dev/null 2>&1`, true, true);
+            tarExtractCommand = `timeout 600 ${tarExtractCommand}`;
+          } catch {
+            // timeout command not available, use regular tar
+          }
+
+          await CloudRunnerSystem.Run(tarExtractCommand);
+        } catch (extractError: any) {
+          const errorMessage = extractError?.message || extractError?.toString() || '';
+          // Check for common tar errors that indicate corruption or disk issues
+          if (
+            errorMessage.includes('Unexpected EOF') ||
+            errorMessage.includes('rmtlseek') ||
+            errorMessage.includes('No space left') ||
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('Terminated')
+          ) {
+            const message = `Cache extraction failed (likely due to corrupted archive or disk space): ${errorMessage}. Continuing without cache.`;
+            CloudRunnerLogger.logWarning(message);
+            RemoteClientLogger.logWarning(message);
+            // Continue without cache - build will proceed without cached Library
+            process.chdir(startPath);
+            return;
+          }
+          // Re-throw other errors
+          throw extractError;
+        }
+
         RemoteClientLogger.log(`cache item extracted to ${fullResultsFolder}`);
         assert(await fileExists(fullResultsFolder), `cache extraction results folder exists`);
         const destinationParentFolder = path.resolve(destinationFolder, '..');

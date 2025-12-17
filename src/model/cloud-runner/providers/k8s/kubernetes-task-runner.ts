@@ -364,42 +364,162 @@ class KubernetesTaskRunner {
   static async watchUntilPodRunning(kubeClient: CoreV1Api, podName: string, namespace: string) {
     let waitComplete: boolean = false;
     let message = ``;
+    let lastPhase = '';
+    let consecutivePendingCount = 0;
     CloudRunnerLogger.log(`Watching ${podName} ${namespace}`);
-    await waitUntil(
-      async () => {
-        const status = await kubeClient.readNamespacedPodStatus(podName, namespace);
-        const phase = status?.body.status?.phase;
-        waitComplete = phase !== 'Pending';
-        message = `Phase:${status.body.status?.phase} \n Reason:${
-          status.body.status?.conditions?.[0].reason || ''
-        } \n Message:${status.body.status?.conditions?.[0].message || ''}`;
 
-        // CloudRunnerLogger.log(
-        //   JSON.stringify(
-        //     (await kubeClient.listNamespacedEvent(namespace)).body.items
-        //       .map((x) => {
-        //         return {
-        //           message: x.message || ``,
-        //           name: x.metadata.name || ``,
-        //           reason: x.reason || ``,
-        //         };
-        //       })
-        //       .filter((x) => x.name.includes(podName)),
-        //     undefined,
-        //     4,
-        //   ),
-        // );
-        if (waitComplete || phase !== 'Pending') return true;
+    try {
+      await waitUntil(
+        async () => {
+          const status = await kubeClient.readNamespacedPodStatus(podName, namespace);
+          const phase = status?.body.status?.phase || 'Unknown';
+          const conditions = status?.body.status?.conditions || [];
+          const containerStatuses = status?.body.status?.containerStatuses || [];
 
-        return false;
-      },
-      {
-        timeout: 2000000,
-        intervalBetweenAttempts: 15000,
-      },
-    );
+          // Log phase changes
+          if (phase !== lastPhase) {
+            CloudRunnerLogger.log(`Pod ${podName} phase changed: ${lastPhase} -> ${phase}`);
+            lastPhase = phase;
+            consecutivePendingCount = 0;
+          }
+
+          // Check for failure conditions that mean the pod will never start
+          const failureReasons = [
+            'Unschedulable',
+            'Failed',
+            'ImagePullBackOff',
+            'ErrImagePull',
+            'CrashLoopBackOff',
+            'CreateContainerError',
+            'CreateContainerConfigError',
+          ];
+
+          const hasFailureCondition = conditions.some((condition: any) =>
+            failureReasons.some((reason) => condition.reason?.includes(reason)),
+          );
+
+          const hasFailureContainerStatus = containerStatuses.some((containerStatus: any) =>
+            failureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
+          );
+
+          if (hasFailureCondition || hasFailureContainerStatus) {
+            // Get detailed failure information
+            const failureCondition = conditions.find((condition: any) =>
+              failureReasons.some((reason) => condition.reason?.includes(reason)),
+            );
+            const failureContainer = containerStatuses.find((containerStatus: any) =>
+              failureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
+            );
+
+            message = `Pod ${podName} failed to start:\nPhase: ${phase}\n`;
+            if (failureCondition) {
+              message += `Condition Reason: ${failureCondition.reason}\nCondition Message: ${failureCondition.message}\n`;
+            }
+            if (failureContainer) {
+              message += `Container Reason: ${failureContainer.state?.waiting?.reason}\nContainer Message: ${failureContainer.state?.waiting?.message}\n`;
+            }
+
+            // Log pod events for additional context
+            try {
+              const events = await kubeClient.listNamespacedEvent(namespace);
+              const podEvents = events.body.items
+                .filter((x) => x.involvedObject?.name === podName)
+                .map((x) => ({
+                  message: x.message || ``,
+                  reason: x.reason || ``,
+                  type: x.type || ``,
+                }));
+              if (podEvents.length > 0) {
+                message += `\nRecent Events:\n${JSON.stringify(podEvents.slice(-5), undefined, 2)}`;
+              }
+            } catch (eventError) {
+              // Ignore event fetch errors
+            }
+
+            CloudRunnerLogger.logWarning(message);
+            waitComplete = false; // Mark as not complete so we throw an error
+            return true; // Return true to exit wait loop
+          }
+
+          waitComplete = phase !== 'Pending' && phase !== 'Unknown';
+
+          if (phase === 'Pending') {
+            consecutivePendingCount++;
+            // Log diagnostic info every 4 checks (1 minute) if still pending
+            if (consecutivePendingCount % 4 === 0) {
+              const pendingMessage = `Pod ${podName} still Pending (check ${consecutivePendingCount}). Phase: ${phase}`;
+              const conditionMessages = conditions
+                .map((c: any) => `${c.type}: ${c.reason || 'N/A'} - ${c.message || 'N/A'}`)
+                .join('; ');
+              CloudRunnerLogger.log(`${pendingMessage}. Conditions: ${conditionMessages || 'None'}`);
+
+              // Log events periodically to help diagnose
+              if (consecutivePendingCount % 8 === 0) {
+                try {
+                  const events = await kubeClient.listNamespacedEvent(namespace);
+                  const podEvents = events.body.items
+                    .filter((x) => x.involvedObject?.name === podName)
+                    .slice(-3)
+                    .map((x) => `${x.type}: ${x.reason} - ${x.message}`)
+                    .join('; ');
+                  if (podEvents) {
+                    CloudRunnerLogger.log(`Recent pod events: ${podEvents}`);
+                  }
+                } catch {
+                  // Ignore event fetch errors
+                }
+              }
+            }
+          }
+
+          message = `Phase:${phase} \n Reason:${conditions[0]?.reason || ''} \n Message:${
+            conditions[0]?.message || ''
+          }`;
+
+          if (waitComplete || phase !== 'Pending') return true;
+
+          return false;
+        },
+        {
+          timeout: 2000000, // ~33 minutes
+          intervalBetweenAttempts: 15000, // 15 seconds
+        },
+      );
+    } catch (waitError: any) {
+      // If waitUntil times out or throws, get final pod status
+      try {
+        const finalStatus = await kubeClient.readNamespacedPodStatus(podName, namespace);
+        const phase = finalStatus?.body.status?.phase || 'Unknown';
+        const conditions = finalStatus?.body.status?.conditions || [];
+        message = `Pod ${podName} timed out waiting to start.\nFinal Phase: ${phase}\n`;
+        message += conditions.map((c: any) => `${c.type}: ${c.reason} - ${c.message}`).join('\n');
+
+        // Get events for context
+        try {
+          const events = await kubeClient.listNamespacedEvent(namespace);
+          const podEvents = events.body.items
+            .filter((x) => x.involvedObject?.name === podName)
+            .slice(-5)
+            .map((x) => `${x.type}: ${x.reason} - ${x.message}`);
+          if (podEvents.length > 0) {
+            message += `\n\nRecent Events:\n${podEvents.join('\n')}`;
+          }
+        } catch {
+          // Ignore event fetch errors
+        }
+
+        CloudRunnerLogger.logWarning(message);
+      } catch (statusError) {
+        message = `Pod ${podName} timed out and could not retrieve final status: ${waitError?.message || waitError}`;
+        CloudRunnerLogger.logWarning(message);
+      }
+
+      throw new Error(`Pod ${podName} failed to start within timeout. ${message}`);
+    }
+
     if (!waitComplete) {
-      CloudRunnerLogger.log(message);
+      CloudRunnerLogger.logWarning(`Pod ${podName} did not reach running state: ${message}`);
+      throw new Error(`Pod ${podName} did not start successfully: ${message}`);
     }
 
     return waitComplete;

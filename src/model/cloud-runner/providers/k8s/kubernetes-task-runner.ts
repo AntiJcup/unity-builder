@@ -448,7 +448,9 @@ class KubernetesTaskRunner {
             }
 
             CloudRunnerLogger.logWarning(message);
-            waitComplete = false; // Mark as not complete so we throw an error
+            // For permanent failures, mark as incomplete and store the error message
+            // We'll throw an error after the wait loop exits
+            waitComplete = false;
             return true; // Return true to exit wait loop
           }
 

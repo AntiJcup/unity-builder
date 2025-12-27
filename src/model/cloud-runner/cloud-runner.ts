@@ -68,6 +68,9 @@ class CloudRunner {
     CloudRunnerLogger.log(`Cloud Runner platform selected ${CloudRunner.buildParameters.providerStrategy}`);
 
     // Detect LocalStack endpoints and reroute AWS provider to local-docker for CI tests that only need S3
+    // However, if AWS_FORCE_PROVIDER is set to 'aws', we should use AWS provider even with LocalStack
+    // This is needed for integrity tests that validate AWS functionality (ECS, CloudFormation, etc.) with LocalStack
+    const forceAwsProvider = process.env.AWS_FORCE_PROVIDER === 'aws' || process.env.AWS_FORCE_PROVIDER === 'true';
     const endpointsToCheck = [
       process.env.AWS_ENDPOINT,
       process.env.AWS_S3_ENDPOINT,
@@ -86,9 +89,12 @@ class CloudRunner {
       .join(' ');
     const isLocalStack = /localstack|localhost|127\.0\.0\.1/i.test(endpointsToCheck);
     let provider = CloudRunner.buildParameters.providerStrategy;
-    if (provider === 'aws' && isLocalStack) {
+    if (provider === 'aws' && isLocalStack && !forceAwsProvider) {
       CloudRunnerLogger.log('LocalStack endpoints detected; routing provider to local-docker for this run');
+      CloudRunnerLogger.log('Note: Set AWS_FORCE_PROVIDER=aws to force AWS provider with LocalStack for AWS functionality tests');
       provider = 'local-docker';
+    } else if (provider === 'aws' && isLocalStack && forceAwsProvider) {
+      CloudRunnerLogger.log('LocalStack endpoints detected but AWS_FORCE_PROVIDER is set; using AWS provider to validate AWS functionality');
     }
 
     switch (provider) {
@@ -97,6 +103,13 @@ class CloudRunner {
         break;
       case 'aws':
         CloudRunner.Provider = new AwsBuildPlatform(CloudRunner.buildParameters);
+        // Validate that AWS provider is actually being used when expected
+        if (isLocalStack && forceAwsProvider) {
+          CloudRunnerLogger.log('✓ AWS provider initialized with LocalStack - AWS functionality will be validated');
+        } else if (isLocalStack && !forceAwsProvider) {
+          CloudRunnerLogger.log('⚠ WARNING: AWS provider was requested but LocalStack detected without AWS_FORCE_PROVIDER');
+          CloudRunnerLogger.log('⚠ This may cause AWS functionality tests to fail validation');
+        }
         break;
       case 'test':
         CloudRunner.Provider = new TestCloudRunner();
@@ -120,6 +133,13 @@ class CloudRunner {
           CloudRunner.Provider = new LocalCloudRunner();
         }
         break;
+    }
+    
+    // Final validation: Ensure provider matches expectations
+    const finalProviderName = CloudRunner.Provider.constructor.name;
+    if (CloudRunner.buildParameters.providerStrategy === 'aws' && finalProviderName !== 'AWSBuildEnvironment') {
+      CloudRunnerLogger.log(`⚠ WARNING: Expected AWS provider but got ${finalProviderName}`);
+      CloudRunnerLogger.log('⚠ AWS functionality tests may not be validating AWS services correctly');
     }
   }
 

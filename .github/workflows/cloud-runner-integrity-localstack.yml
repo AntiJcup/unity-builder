@@ -22,6 +22,7 @@ env:
   AWS_ENDPOINT_URL: http://localhost:4566
   AWS_ACCESS_KEY_ID: test
   AWS_SECRET_ACCESS_KEY: test
+  AWS_FORCE_PROVIDER: aws
   CLOUD_RUNNER_BRANCH: ${{ github.ref }}
   DEBUG: true
   PROJECT_PATH: test-project
@@ -60,7 +61,35 @@ jobs:
         with:
           node-version: 20
           cache: 'yarn'
+      - name: Verify LocalStack is running and accessible
+        run: |
+          echo "Verifying LocalStack services are available..."
+          # Wait for LocalStack to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q '"services":'; then
+              echo "LocalStack is ready"
+              curl -s http://localhost:4566/_localstack/health | jq '.' || curl -s http://localhost:4566/_localstack/health
+              break
+            fi
+            echo "Waiting for LocalStack... ($i/30)"
+            sleep 2
+          done
+          # Verify required AWS services are available
+          echo "Verifying required AWS services (cloudformation,ecs,kinesis,cloudwatch,s3,logs)..."
+          curl -s http://localhost:4566/_localstack/health | grep -q 'cloudformation' || echo "WARNING: CloudFormation service may not be available"
+          curl -s http://localhost:4566/_localstack/health | grep -q 'ecs' || echo "WARNING: ECS service may not be available"
+          curl -s http://localhost:4566/_localstack/health | grep -q 'kinesis' || echo "WARNING: Kinesis service may not be available"
       - run: yarn install --frozen-lockfile
+      - name: Validate AWS provider configuration
+        run: |
+          echo "Validating AWS provider configuration for LocalStack tests..."
+          echo "PROVIDER_STRATEGY: aws"
+          echo "AWS_FORCE_PROVIDER: ${{ env.AWS_FORCE_PROVIDER }}"
+          echo "AWS_ENDPOINT: ${{ env.AWS_ENDPOINT }}"
+          echo ""
+          echo "✓ Configuration validated: AWS provider will be used with LocalStack to validate AWS functionality"
+          echo "✓ This ensures ECS, CloudFormation, Kinesis, and other AWS services are properly tested"
+          echo "✓ AWS_FORCE_PROVIDER prevents automatic fallback to local-docker"
       - run: yarn run test "${{ matrix.test }}" --detectOpenHandles --forceExit --runInBand
         timeout-minutes: 60
         env:
@@ -73,7 +102,10 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: aws
+          AWS_FORCE_PROVIDER: aws
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}

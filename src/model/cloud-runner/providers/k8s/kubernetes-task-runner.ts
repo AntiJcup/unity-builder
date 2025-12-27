@@ -216,22 +216,28 @@ class KubernetesTaskRunner {
     // This ensures all log messages are included in BuildResults for test assertions
     // If output is empty, we need to be more aggressive about getting logs
     const needsFallback = output.trim().length === 0;
+    const missingCollectedLogs = !output.includes('Collected Logs');
+    
     if (needsFallback) {
       CloudRunnerLogger.log('Output is empty, attempting aggressive log collection fallback...');
       // Give the pod a moment to finish writing logs before we try to read them
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
-    // Always try fallback if output is empty, or if pod is terminated (to capture post-build messages)
+    // Always try fallback if output is empty, if pod is terminated, or if "Collected Logs" is missing
+    // The "Collected Logs" check ensures we try to get post-build messages even if we have some output
     try {
       const isPodStillRunning = await KubernetesPods.IsPodRunning(podName, namespace, kubeClient);
-      const shouldTryFallback = !isPodStillRunning || needsFallback;
+      const shouldTryFallback = !isPodStillRunning || needsFallback || missingCollectedLogs;
 
       if (shouldTryFallback) {
+        const reason = needsFallback
+          ? 'output is empty'
+          : missingCollectedLogs
+            ? 'Collected Logs missing from output'
+            : 'pod is terminated';
         CloudRunnerLogger.log(
-          `Pod is ${isPodStillRunning ? 'running' : 'terminated'} and output is ${
-            needsFallback ? 'empty' : 'not empty'
-          }, reading log file as fallback...`,
+          `Pod is ${isPodStillRunning ? 'running' : 'terminated'} and ${reason}, reading log file as fallback...`,
         );
         try {
           // Try to read the log file from the pod
@@ -240,12 +246,16 @@ class KubernetesTaskRunner {
           let logFileContent = '';
 
           // Try multiple approaches to get the log file
-          // Order matters: try terminated container first, then current, then kubectl logs as last resort
+          // Order matters: try terminated container first, then current, then PVC, then kubectl logs as last resort
+          // For K8s, the PVC is mounted at /data, so try reading from there too
           const attempts = [
             // For terminated pods, try --previous first
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || echo ""`,
             // Try current container
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+            // Try reading from PVC (/data) in case log was copied there
+            `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /data/job-log.txt 2>/dev/null || echo ""`,
+            `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /data/job-log.txt 2>/dev/null || echo ""`,
             // Try kubectl logs as fallback (might capture stdout even if exec fails)
             `kubectl logs ${podName} -c ${containerName} -n ${namespace} --previous 2>/dev/null || echo ""`,
             `kubectl logs ${podName} -c ${containerName} -n ${namespace} 2>/dev/null || echo ""`,

@@ -194,7 +194,8 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     fi
     # Write "Collected Logs" message for K8s (needed for test assertions)
     # Write to both stdout and log file to ensure it's captured even if kubectl has issues
-    echo "Collected Logs" | tee -a /home/job-log.txt
+    # Also write to PVC (/data) as backup in case pod is OOM-killed and ephemeral filesystem is lost
+    echo "Collected Logs" | tee -a /home/job-log.txt /data/job-log.txt 2>/dev/null || echo "Collected Logs" | tee -a /home/job-log.txt
     # Write end markers directly to log file (builder might be cleaned up by post-build)
     # Also write to stdout for K8s kubectl logs
     echo "end of cloud runner job" | tee -a /home/job-log.txt
@@ -229,7 +230,8 @@ echo "CACHE_KEY=$CACHE_KEY"`;
     fi
     # Write "Collected Logs" message for K8s (needed for test assertions)
     # Write to both stdout and log file to ensure it's captured even if kubectl has issues
-    echo "Collected Logs" | tee -a /home/job-log.txt
+    # Also write to PVC (/data) as backup in case pod is OOM-killed and ephemeral filesystem is lost
+    echo "Collected Logs" | tee -a /home/job-log.txt /data/job-log.txt 2>/dev/null || echo "Collected Logs" | tee -a /home/job-log.txt
     # Write end markers to both stdout and log file (builder might be cleaned up by post-build)
     echo "end of cloud runner job" | tee -a /home/job-log.txt
     echo "---${CloudRunner.buildParameters.logId}" | tee -a /home/job-log.txt`;

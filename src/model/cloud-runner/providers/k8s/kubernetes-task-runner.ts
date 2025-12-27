@@ -393,35 +393,36 @@ class KubernetesTaskRunner {
             consecutivePendingCount = 0;
           }
 
-          // Check for failure conditions that mean the pod will never start
-          const failureReasons = [
+          // Check for failure conditions that mean the pod will never start (permanent failures)
+          // Note: We don't treat "Failed" phase as a permanent failure because the pod might have
+          // completed its work before being killed (OOM), and we should still try to get logs
+          const permanentFailureReasons = [
             'Unschedulable',
-            'Failed',
             'ImagePullBackOff',
             'ErrImagePull',
-            'CrashLoopBackOff',
             'CreateContainerError',
             'CreateContainerConfigError',
           ];
 
-          const hasFailureCondition = conditions.some((condition: any) =>
-            failureReasons.some((reason) => condition.reason?.includes(reason)),
+          const hasPermanentFailureCondition = conditions.some((condition: any) =>
+            permanentFailureReasons.some((reason) => condition.reason?.includes(reason)),
           );
 
-          const hasFailureContainerStatus = containerStatuses.some((containerStatus: any) =>
-            failureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
+          const hasPermanentFailureContainerStatus = containerStatuses.some((containerStatus: any) =>
+            permanentFailureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
           );
 
-          if (hasFailureCondition || hasFailureContainerStatus) {
+          // Only treat permanent failures as errors - pods that completed (Failed/Succeeded) should continue
+          if (hasPermanentFailureCondition || hasPermanentFailureContainerStatus) {
             // Get detailed failure information
             const failureCondition = conditions.find((condition: any) =>
-              failureReasons.some((reason) => condition.reason?.includes(reason)),
+              permanentFailureReasons.some((reason) => condition.reason?.includes(reason)),
             );
             const failureContainer = containerStatuses.find((containerStatus: any) =>
-              failureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
+              permanentFailureReasons.some((reason) => containerStatus.state?.waiting?.reason?.includes(reason)),
             );
 
-            message = `Pod ${podName} failed to start:\nPhase: ${phase}\n`;
+            message = `Pod ${podName} failed to start (permanent failure):\nPhase: ${phase}\n`;
             if (failureCondition) {
               message += `Condition Reason: ${failureCondition.reason}\nCondition Message: ${failureCondition.message}\n`;
             }
@@ -451,7 +452,14 @@ class KubernetesTaskRunner {
             return true; // Return true to exit wait loop
           }
 
+          // Pod is complete if it's not Pending or Unknown - it might be Running, Succeeded, or Failed
+          // For Failed/Succeeded pods, we still want to try to get logs, so we mark as complete
           waitComplete = phase !== 'Pending' && phase !== 'Unknown';
+          
+          // If pod completed (Succeeded/Failed), log it but don't throw - we'll try to get logs
+          if (waitComplete && phase !== 'Running') {
+            CloudRunnerLogger.log(`Pod ${podName} completed with phase: ${phase}. Will attempt to retrieve logs.`);
+          }
 
           if (phase === 'Pending') {
             consecutivePendingCount++;
@@ -527,7 +535,22 @@ class KubernetesTaskRunner {
       throw new Error(`Pod ${podName} failed to start within timeout. ${message}`);
     }
 
+    // Only throw if we detected a permanent failure condition
+    // If the pod completed (Failed/Succeeded), we should still try to get logs
     if (!waitComplete) {
+      // Check the final phase to see if it's a permanent failure or just completed
+      try {
+        const finalStatus = await kubeClient.readNamespacedPodStatus(podName, namespace);
+        const finalPhase = finalStatus?.body.status?.phase || 'Unknown';
+        if (finalPhase === 'Failed' || finalPhase === 'Succeeded') {
+          CloudRunnerLogger.logWarning(
+            `Pod ${podName} completed with phase ${finalPhase} before reaching Running state. Will attempt to retrieve logs.`,
+          );
+          return true; // Allow workflow to continue and try to get logs
+        }
+      } catch {
+        // If we can't check status, fall through to throw error
+      }
       CloudRunnerLogger.logWarning(`Pod ${podName} did not reach running state: ${message}`);
       throw new Error(`Pod ${podName} did not start successfully: ${message}`);
     }

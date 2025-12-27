@@ -60,6 +60,9 @@ jobs:
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
+          # Clean up any existing cluster and free disk space before creating new one
+          k3d cluster delete unity-builder || true
+          docker system prune -af --volumes || true
           # Create cluster - host.k3d.internal will allow pods to access host services
           # No port mapping needed - LocalStack is on host, accessible via host.k3d.internal:4566
           k3d cluster create unity-builder --agents 1 --wait
@@ -87,14 +90,24 @@ jobs:
           kubectl run test-localstack --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
             curl -v --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -20 || \
             echo "Cluster connectivity test - if this fails, LocalStack may not be accessible from k3d"
-          # Clean up disk space on the k3d node to prevent evictions
+          # Clean up disk space on the k3d node to prevent evictions and disk pressure
           echo "Cleaning up disk space on k3d nodes..."
           docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true
           docker system prune -af --volumes || true
-          # Clean up disk space on the node to prevent evictions
-          echo "Cleaning up disk space on k3d nodes..."
-          docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true
-          docker system prune -af --volumes || true
+          # Wait for disk pressure taints to clear (with timeout)
+          echo "Checking for disk pressure taints on nodes..."
+          for i in {1..30}; do
+            if kubectl describe nodes | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, waiting for it to clear... ($i/30)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              echo "No disk pressure taints found"
+              break
+            fi
+          done
+          kubectl describe nodes | grep -i taint || echo "No taints found"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -131,10 +144,23 @@ jobs:
           # Clean up disk space - aggressive cleanup to prevent evictions
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          # Clean up disk space on k3d node to prevent ephemeral-storage evictions
+          # Clean up disk space on k3d node to prevent ephemeral-storage evictions and disk pressure
           echo "Cleaning up disk space on k3d node..."
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes || true" 2>/dev/null || true
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
           docker exec k3d-unity-builder-agent-0 sh -c "df -h" 2>/dev/null || true
+          # Wait for disk pressure taints to clear before proceeding
+          echo "Checking for disk pressure taints..."
+          for i in {1..20}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up and waiting... ($i/20)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 3
+            else
+              echo "No disk pressure taints found, proceeding with test"
+              break
+            fi
+          done
       - name: Run cloud-runner-image test (validate image creation)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
@@ -174,7 +200,20 @@ jobs:
           done || true
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          # Wait for disk pressure to clear
+          for i in {1..15}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up... ($i/15)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              break
+            fi
+          done
       - name: Run cloud-runner-kubernetes test (simple K8s build validation)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-kubernetes" --detectOpenHandles --forceExit --runInBand
@@ -215,7 +254,20 @@ jobs:
           done || true
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          # Wait for disk pressure to clear
+          for i in {1..15}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up... ($i/15)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              break
+            fi
+          done
       - name: Run cloud-runner-s3-steps test (validate S3 operations with K8s)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
@@ -256,7 +308,20 @@ jobs:
           done || true
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          # Wait for disk pressure to clear
+          for i in {1..15}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up... ($i/15)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              break
+            fi
+          done
       - name: Run cloud-runner-end2end-caching test
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
@@ -297,7 +362,20 @@ jobs:
           done || true
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          # Wait for disk pressure to clear
+          for i in {1..15}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up... ($i/15)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              break
+            fi
+          done
       - name: Run cloud-runner-end2end-retaining test
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
@@ -337,7 +415,20 @@ jobs:
           done || true
           sleep 3
           rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
+          docker system prune -af --volumes || true
+          # Clean up disk space on k3d node
+          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          # Wait for disk pressure to clear
+          for i in {1..15}; do
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "Disk pressure detected, cleaning up... ($i/15)"
+              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              docker system prune -af --volumes || true
+              sleep 2
+            else
+              break
+            fi
+          done
   localstack:
     name: Cloud Runner Tests (LocalStack)
     runs-on: ubuntu-latest

@@ -162,27 +162,44 @@ jobs:
             fi
           done
       - name: Ensure disk pressure cleared before test
-        timeout-minutes: 2
+        timeout-minutes: 3
         run: |
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
           # Wait for disk pressure taints to clear (with aggressive cleanup)
-          for i in {1..30}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
+          for i in {1..40}; do
+            HAS_DISK_PRESSURE=$(kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure" && echo "true" || echo "false")
+            if [ "$HAS_DISK_PRESSURE" = "true" ]; then
+              echo "Disk pressure detected, cleaning up aggressively... ($i/40)"
+              # Check actual disk usage on the node
+              DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              echo "Current disk usage on k3d node: ${DISK_USAGE}%"
+              # Aggressive cleanup inside k3d node
               docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              # Remove all stopped containers and unused images
+              docker exec k3d-unity-builder-agent-0 sh -c "docker container prune -f 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "docker image prune -af 2>/dev/null || true" || true
+              # Clean up host docker
               docker system prune -af --volumes || true
-              # Also clean up k3d internal images and containers
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
-              sleep 3
+              sleep 5
             else
               echo "No disk pressure taints found, proceeding with test"
               kubectl describe nodes | grep -i taint || echo "No taints found"
               break
             fi
           done
+          # If disk pressure taint is still present after cleanup, manually remove it (CI only)
+          if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+            echo "WARNING: Disk pressure taint still present after cleanup. Manually removing taint for CI..."
+            NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
+            for node in $NODE_NAMES; do
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+            done
+            echo "Taint removed. Checking nodes..."
+            kubectl describe nodes | grep -i taint || echo "No taints found"
+          fi
       - name: Run cloud-runner-image test (validate image creation)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand

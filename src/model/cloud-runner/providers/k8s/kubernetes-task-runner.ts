@@ -481,9 +481,55 @@ class KubernetesTaskRunner {
 
           if (phase === 'Pending') {
             consecutivePendingCount++;
+            
+            // Check for scheduling failures in events (faster than waiting for conditions)
+            try {
+              const events = await kubeClient.listNamespacedEvent(namespace);
+              const podEvents = events.body.items.filter((x) => x.involvedObject?.name === podName);
+              const failedSchedulingEvents = podEvents.filter(
+                (x) => x.reason === 'FailedScheduling' || x.reason === 'SchedulingGated',
+              );
+              
+              if (failedSchedulingEvents.length > 0) {
+                const schedulingMessage = failedSchedulingEvents
+                  .map((x) => `${x.reason}: ${x.message || ''}`)
+                  .join('; ');
+                message = `Pod ${podName} cannot be scheduled:\n${schedulingMessage}`;
+                CloudRunnerLogger.logWarning(message);
+                waitComplete = false;
+                return true; // Exit wait loop to throw error
+              }
+            } catch {
+              // Ignore event fetch errors
+            }
+            
+            // For tests, fail faster if stuck in Pending (2 minutes = 8 checks at 15s interval)
+            const isTest = process.env['cloudRunnerTests'] === 'true';
+            const maxPendingChecks = isTest ? 8 : 80; // 2 minutes for tests, 20 minutes for production
+            
+            if (consecutivePendingCount >= maxPendingChecks) {
+              message = `Pod ${podName} stuck in Pending state for too long (${consecutivePendingCount} checks). This indicates a scheduling problem.`;
+              // Get events for context
+              try {
+                const events = await kubeClient.listNamespacedEvent(namespace);
+                const podEvents = events.body.items
+                  .filter((x) => x.involvedObject?.name === podName)
+                  .slice(-5)
+                  .map((x) => `${x.type}: ${x.reason} - ${x.message}`);
+                if (podEvents.length > 0) {
+                  message += `\n\nRecent Events:\n${podEvents.join('\n')}`;
+                }
+              } catch {
+                // Ignore event fetch errors
+              }
+              CloudRunnerLogger.logWarning(message);
+              waitComplete = false;
+              return true; // Exit wait loop to throw error
+            }
+            
             // Log diagnostic info every 4 checks (1 minute) if still pending
             if (consecutivePendingCount % 4 === 0) {
-              const pendingMessage = `Pod ${podName} still Pending (check ${consecutivePendingCount}). Phase: ${phase}`;
+              const pendingMessage = `Pod ${podName} still Pending (check ${consecutivePendingCount}/${maxPendingChecks}). Phase: ${phase}`;
               const conditionMessages = conditions
                 .map((c: any) => `${c.type}: ${c.reason || 'N/A'} - ${c.message || 'N/A'}`)
                 .join('; ');
@@ -517,7 +563,7 @@ class KubernetesTaskRunner {
           return false;
         },
         {
-          timeout: 2000000, // ~33 minutes
+          timeout: process.env['cloudRunnerTests'] === 'true' ? 300000 : 2000000, // 5 minutes for tests, ~33 minutes for production
           intervalBetweenAttempts: 15000, // 15 seconds
         },
       );

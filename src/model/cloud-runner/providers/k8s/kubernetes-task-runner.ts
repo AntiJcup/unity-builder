@@ -262,21 +262,32 @@ class KubernetesTaskRunner {
           ];
 
           for (const attempt of attempts) {
-            if (logFileContent && logFileContent.trim()) {
-              break; // We got content, no need to try more
+            // If we already have content with "Collected Logs", no need to try more
+            if (logFileContent && logFileContent.trim() && logFileContent.includes('Collected Logs')) {
+              CloudRunnerLogger.log('Found "Collected Logs" in fallback content, stopping attempts.');
+              break;
             }
             try {
               CloudRunnerLogger.log(`Trying fallback method: ${attempt.substring(0, 80)}...`);
               const result = await CloudRunnerSystem.Run(attempt, true, true);
               if (result && result.trim()) {
-                logFileContent = result;
-                CloudRunnerLogger.log(
-                  `Successfully read logs using fallback method (${logFileContent.length} chars): ${attempt.substring(
-                    0,
-                    50,
-                  )}...`,
-                );
-                break;
+                // Prefer content that has "Collected Logs" over content that doesn't
+                if (!logFileContent || !logFileContent.includes('Collected Logs')) {
+                  logFileContent = result;
+                  CloudRunnerLogger.log(
+                    `Successfully read logs using fallback method (${logFileContent.length} chars): ${attempt.substring(
+                      0,
+                      50,
+                    )}...`,
+                  );
+                  // If this content has "Collected Logs", we're done
+                  if (logFileContent.includes('Collected Logs')) {
+                    CloudRunnerLogger.log('Fallback method successfully captured "Collected Logs".');
+                    break;
+                  }
+                } else {
+                  CloudRunnerLogger.log(`Skipping this result - already have content with "Collected Logs".`);
+                }
               } else {
                 CloudRunnerLogger.log(`Fallback method returned empty result: ${attempt.substring(0, 50)}...`);
               }
@@ -331,15 +342,20 @@ class KubernetesTaskRunner {
         }
       }
 
-      // If output is still empty after fallback attempts, add a warning message
+      // If output is still empty or missing "Collected Logs" after fallback attempts, add a warning message
       // This ensures BuildResults is not completely empty, which would cause test failures
-      if (needsFallback && output.trim().length === 0) {
+      if ((needsFallback && output.trim().length === 0) || (!output.includes('Collected Logs') && shouldTryFallback)) {
         CloudRunnerLogger.logWarning(
-          'Could not retrieve any logs from pod after all attempts. Pod may have been killed before logs were written.',
+          'Could not retrieve "Collected Logs" from pod after all attempts. Pod may have been killed before logs were written.',
         );
         // Add a minimal message so BuildResults is not completely empty
         // This helps with debugging and prevents test failures due to empty results
-        output = 'Pod logs unavailable - pod may have been terminated before logs could be collected.\n';
+        if (output.trim().length === 0) {
+          output = 'Pod logs unavailable - pod may have been terminated before logs could be collected.\n';
+        } else if (!output.includes('Collected Logs')) {
+          // We have some output but missing "Collected Logs" - append the fallback message
+          output += '\nPod logs incomplete - "Collected Logs" marker not found. Pod may have been terminated before post-build completed.\n';
+        }
       }
     } catch (fallbackError: any) {
       CloudRunnerLogger.logWarning(

@@ -167,10 +167,15 @@ jobs:
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node to prevent ephemeral-storage evictions and disk pressure
           echo "Cleaning up disk space on k3d node..."
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-          # Also clean up old logs and temporary files that might be taking up space
-          docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -mtime +1 -delete 2>/dev/null || true" || true
-          docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -mtime +1 -delete 2>/dev/null || true" || true
+          # Use containerd/crictl commands (docker not available in k3d nodes)
+          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
+          # Clean up containerd snapshots and images more aggressively
+          docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+          # Clean up old logs and temporary files
+          docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -delete 2>/dev/null || true" || true
+          docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -delete 2>/dev/null || true" || true
+          docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
           docker exec k3d-unity-builder-agent-0 sh -c "df -h" 2>/dev/null || true
           # Wait for disk pressure taints to clear before proceeding
           echo "Checking for disk pressure taints..."

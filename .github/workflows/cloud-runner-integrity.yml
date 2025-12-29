@@ -238,13 +238,20 @@ jobs:
             fi
           done
           # If disk pressure taint is still present after cleanup, manually remove it (CI only)
+          # Try multiple times as Kubernetes may re-add it if condition persists
           if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
             echo "WARNING: Disk pressure taint still present after cleanup. Manually removing taint for CI..."
             NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
             for node in $NODE_NAMES; do
+              # Try removing with NoSchedule effect (most common)
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
+              # Also try without effect specifier
               kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+              # Use patch as fallback
+              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
             done
-            echo "Taint removed. Checking nodes..."
+            sleep 2
+            echo "Taint removal attempted. Checking nodes..."
             kubectl describe nodes | grep -i taint || echo "No taints found"
           fi
           # Wait for disk pressure condition to clear (not just taint)
@@ -264,9 +271,20 @@ jobs:
             echo "WARNING: Disk pressure condition still exists. Removing taint and waiting 10 seconds..."
             NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
             for node in $NODE_NAMES; do
+              # Try removing with NoSchedule effect (most common)
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
+              # Also try without effect specifier
               kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+              # Use patch as fallback to remove all taints
+              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
             done
             sleep 10
+            # Verify taint is actually removed
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "ERROR: Taint still present after removal attempts. This may cause pod scheduling issues."
+            else
+              echo "Taint successfully removed."
+            fi
           fi
       - name: Run cloud-runner-image test (validate image creation)
         timeout-minutes: 10
@@ -488,13 +506,20 @@ jobs:
             fi
           done
           # If disk pressure taint is still present after cleanup, manually remove it (CI only)
+          # Try multiple times as Kubernetes may re-add it if condition persists
           if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
             echo "WARNING: Disk pressure taint still present after cleanup. Manually removing taint for CI..."
             NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
             for node in $NODE_NAMES; do
+              # Try removing with NoSchedule effect (most common)
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
+              # Also try without effect specifier
               kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+              # Use patch as fallback
+              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
             done
-            echo "Taint removed. Checking nodes..."
+            sleep 2
+            echo "Taint removal attempted. Checking nodes..."
             kubectl describe nodes | grep -i taint || echo "No taints found"
           fi
           # Wait for disk pressure condition to clear (not just taint)
@@ -514,9 +539,20 @@ jobs:
             echo "WARNING: Disk pressure condition still exists. Removing taint and waiting 10 seconds..."
             NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
             for node in $NODE_NAMES; do
+              # Try removing with NoSchedule effect (most common)
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
+              # Also try without effect specifier
               kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+              # Use patch as fallback to remove all taints
+              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
             done
             sleep 10
+            # Verify taint is actually removed
+            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
+              echo "ERROR: Taint still present after removal attempts. This may cause pod scheduling issues."
+            else
+              echo "Taint successfully removed."
+            fi
           fi
       - name: Run cloud-runner-s3-steps test (validate S3 operations with K8s)
         timeout-minutes: 30

@@ -158,9 +158,12 @@ class KubernetesJobSpecFactory {
       };
     }
 
-    // Set ephemeral-storage request to a reasonable value (2Gi) to prevent evictions
-    // The node needs some free space, so requesting 10Gi when node only has ~2.6GB available causes evictions
-    job.spec.template.spec.containers[0].resources.requests[`ephemeral-storage`] = '2Gi';
+    // Set ephemeral-storage request to a reasonable value to prevent evictions
+    // For tests, use smaller request (1Gi) since k3d nodes have limited disk space (~2.8GB available)
+    // For production, use 2Gi to allow for larger builds
+    // The node needs some free space headroom, so requesting too much causes evictions
+    const ephemeralStorageRequest = process.env['cloudRunnerTests'] === 'true' ? '1Gi' : '2Gi';
+    job.spec.template.spec.containers[0].resources.requests[`ephemeral-storage`] = ephemeralStorageRequest;
 
     return job;
   }

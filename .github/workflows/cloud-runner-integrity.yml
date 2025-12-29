@@ -108,6 +108,19 @@ jobs:
             fi
           done
           kubectl describe nodes | grep -i taint || echo "No taints found"
+      - name: Pre-pull Unity image into k3d node
+        timeout-minutes: 5
+        run: |
+          echo "Pre-pulling Unity image into k3d node to avoid evictions during tests..."
+          # Clean up old images first to make space
+          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          # Pre-pull the Unity image that will be used in tests
+          # This ensures it's cached and doesn't need to be pulled during test execution
+          UNITY_IMAGE="unityci/editor:ubuntu-2021.3.45f1-base-3"
+          echo "Pulling ${UNITY_IMAGE} into k3d node..."
+          docker exec k3d-unity-builder-agent-0 sh -c "crictl pull ${UNITY_IMAGE} 2>&1 || echo 'Image pull failed or already exists'" || true
+          echo "Image pre-pull completed. Checking disk space..."
+          docker exec k3d-unity-builder-agent-0 sh -c "df -h / | tail -1" || true
       - uses: actions/setup-node@v4
         with:
           node-version: 20

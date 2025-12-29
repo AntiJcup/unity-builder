@@ -133,8 +133,29 @@ jobs:
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
           # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           # Only delete secrets that match our naming pattern (build-credentials-*)
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
@@ -213,6 +234,7 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
+          KUBE_VOLUME_SIZE: 5Gi
           containerCpu: '1000'
           containerMemory: '1024'
           AWS_ACCESS_KEY_ID: test
@@ -231,8 +253,30 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
@@ -285,6 +329,7 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
+          KUBE_VOLUME_SIZE: 5Gi
           ENABLE_K8S_E2E: 'true'
           containerCpu: '1000'
           containerMemory: '1024'
@@ -304,8 +349,30 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
@@ -397,8 +464,30 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
@@ -451,6 +540,7 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
+          KUBE_VOLUME_SIZE: 5Gi
           # Set resource requests for tests - increased memory to prevent OOM kills
           containerCpu: '1000'
           containerMemory: '1024'
@@ -470,8 +560,30 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
@@ -524,6 +636,7 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
+          KUBE_VOLUME_SIZE: 5Gi
           containerCpu: '512'
           containerMemory: '512'
           AWS_ACCESS_KEY_ID: test
@@ -542,8 +655,30 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
+          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
+          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          # Wait for PVCs to be fully deleted (up to 30 seconds)
+          echo "Waiting for PVCs to be deleted..."
+          for i in {1..30}; do
+            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
+            if [ "$PVC_COUNT" -eq 0 ]; then
+              echo "All PVCs deleted"
+              break
+            fi
+            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
+            sleep 1
+          done
+          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
+          # This is important for local-path storage in k3d where PVs might not auto-delete
+          echo "Cleaning up orphaned PersistentVolumes..."
+          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
+            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
+              echo "Deleting orphaned PV: $pv"
+              kubectl delete pv "$pv" --ignore-not-found=true || true
+            fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true

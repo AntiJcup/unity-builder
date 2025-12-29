@@ -59,8 +59,11 @@ class KubernetesJobSpecFactory {
         buildGuid,
       },
     };
+    // Reduce TTL for tests to free up resources faster (default 9999s = ~2.8 hours)
+    // For CI/test environments, use shorter TTL (300s = 5 minutes) to prevent disk pressure
+    const jobTTL = process.env['cloudRunnerTests'] === 'true' ? 300 : 9999;
     job.spec = {
-      ttlSecondsAfterFinished: 9999,
+      ttlSecondsAfterFinished: jobTTL,
       backoffLimit: 0,
       template: {
         spec: {

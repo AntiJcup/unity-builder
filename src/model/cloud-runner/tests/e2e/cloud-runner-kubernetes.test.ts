@@ -53,6 +53,18 @@ describe('Cloud Runner Kubernetes', () => {
       const incompleteLogsMessage =
         'Pod logs incomplete - "Collected Logs" marker not found. Pod may have been terminated before post-build completed.';
 
+      // Check if pod was evicted due to resource constraints - this is a test infrastructure failure
+      // Evictions indicate the cluster doesn't have enough resources, which is a test environment issue
+      if (results.includes('The node was low on resource: ephemeral-storage') || 
+          results.includes('TerminationByKubelet') ||
+          results.includes('Evicted')) {
+        throw new Error(
+          `Test failed: Pod was evicted due to resource constraints (ephemeral-storage). ` +
+          `This indicates the test environment doesn't have enough disk space. ` +
+          `Results: ${results.substring(0, 500)}`
+        );
+      }
+
       // If we hit the aggressive fallback path and couldn't retrieve any logs from the pod,
       // don't assert on specific Unity log contents – just assert that we got the fallback message.
       // This makes the test resilient to cluster-level evictions / PreStop hook failures while still

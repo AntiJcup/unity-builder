@@ -193,26 +193,39 @@ jobs:
           docker system prune -af --volumes || true
           docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
           # Wait for disk pressure taints to clear (with aggressive cleanup)
-          for i in {1..40}; do
+          # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
+          PREVIOUS_DISK_USAGE=100
+          for i in {1..10}; do
             HAS_DISK_PRESSURE=$(kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure" && echo "true" || echo "false")
             if [ "$HAS_DISK_PRESSURE" = "true" ]; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/40)"
+              echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
               # Check actual disk usage on the node
               DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
               echo "Current disk usage on k3d node: ${DISK_USAGE}%"
-              # Aggressive cleanup inside k3d node
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              # Remove all stopped containers and unused images
-              docker exec k3d-unity-builder-agent-0 sh -c "docker container prune -f 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "docker image prune -af 2>/dev/null || true" || true
-              # Remove all unused images (including those with tags) to free more space
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images --format '{{.ID}}' | xargs -r docker rmi -f 2>/dev/null || true" || true
-              # Clean up k3s containerd data
-              docker exec k3d-unity-builder-agent-0 sh -c "rm -rf /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*/fs 2>/dev/null || true" || true
+              
+              # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
+              # Clean up k3s containerd snapshots and images
+              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
+              # Clean up old containerd snapshots
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+              # Clean up k3s logs and temp files
               docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
               # Clean up host docker
               docker system prune -af --volumes || true
-              sleep 5
+              
+              # Check if disk usage improved
+              NEW_DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              if [ "$NEW_DISK_USAGE" != "unknown" ] && [ "$PREVIOUS_DISK_USAGE" != "unknown" ]; then
+                if [ "$NEW_DISK_USAGE" -ge "$PREVIOUS_DISK_USAGE" ] && [ "$i" -ge 3 ]; then
+                  echo "Disk usage not improving (${PREVIOUS_DISK_USAGE}% -> ${NEW_DISK_USAGE}%), breaking cleanup loop and removing taint manually"
+                  break
+                fi
+                PREVIOUS_DISK_USAGE=$NEW_DISK_USAGE
+              fi
+              sleep 3
             else
               echo "No disk pressure taints found, proceeding with test"
               kubectl describe nodes | grep -i taint || echo "No taints found"
@@ -409,26 +422,39 @@ jobs:
           docker system prune -af --volumes || true
           docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
           # Wait for disk pressure taints to clear (with aggressive cleanup)
-          for i in {1..40}; do
+          # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
+          PREVIOUS_DISK_USAGE=100
+          for i in {1..10}; do
             HAS_DISK_PRESSURE=$(kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure" && echo "true" || echo "false")
             if [ "$HAS_DISK_PRESSURE" = "true" ]; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/40)"
+              echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
               # Check actual disk usage on the node
               DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
               echo "Current disk usage on k3d node: ${DISK_USAGE}%"
-              # Aggressive cleanup inside k3d node
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              # Remove all stopped containers and unused images
-              docker exec k3d-unity-builder-agent-0 sh -c "docker container prune -f 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "docker image prune -af 2>/dev/null || true" || true
-              # Remove all unused images (including those with tags) to free more space
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images --format '{{.ID}}' | xargs -r docker rmi -f 2>/dev/null || true" || true
-              # Clean up k3s containerd data
-              docker exec k3d-unity-builder-agent-0 sh -c "rm -rf /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*/fs 2>/dev/null || true" || true
+              
+              # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
+              # Clean up k3s containerd snapshots and images
+              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
+              # Clean up old containerd snapshots
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+              # Clean up k3s logs and temp files
               docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
               # Clean up host docker
               docker system prune -af --volumes || true
-              sleep 5
+              
+              # Check if disk usage improved
+              NEW_DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              if [ "$NEW_DISK_USAGE" != "unknown" ] && [ "$PREVIOUS_DISK_USAGE" != "unknown" ]; then
+                if [ "$NEW_DISK_USAGE" -ge "$PREVIOUS_DISK_USAGE" ] && [ "$i" -ge 3 ]; then
+                  echo "Disk usage not improving (${PREVIOUS_DISK_USAGE}% -> ${NEW_DISK_USAGE}%), breaking cleanup loop and removing taint manually"
+                  break
+                fi
+                PREVIOUS_DISK_USAGE=$NEW_DISK_USAGE
+              fi
+              sleep 3
             else
               echo "No disk pressure taints found, proceeding with test"
               kubectl describe nodes | grep -i taint || echo "No taints found"

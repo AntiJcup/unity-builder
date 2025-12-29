@@ -81,6 +81,7 @@ class KubernetesJobSpecFactory {
               ttlSecondsAfterFinished: 9999,
               name: containerName,
               image,
+              imagePullPolicy: process.env['cloudRunnerTests'] === 'true' ? 'IfNotPresent' : 'Always',
               command: ['/bin/sh'],
               args: [
                 '-c',

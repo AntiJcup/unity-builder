@@ -155,6 +155,29 @@ class Kubernetes implements ProviderInterface {
       this.jobName = `unity-builder-job-${this.buildGuid}`;
       this.containerName = `main`;
       await KubernetesSecret.createSecret(secrets, this.secretName, this.namespace, this.kubeClient);
+      
+      // For tests, clean up old images before creating job to free space for image pull
+      if (process.env['cloudRunnerTests'] === 'true') {
+        try {
+          CloudRunnerLogger.log('Cleaning up old images in k3d node before pulling new image...');
+          const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
+          // Clean up unused images in k3d node using containerd
+          await CloudRunnerSystem.Run(
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true',
+            true,
+            true,
+          );
+          await CloudRunnerSystem.Run(
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images -q | head -n -1 | xargs -r crictl rmi 2>/dev/null || true" || true',
+            true,
+            true,
+          );
+        } catch (cleanupError) {
+          CloudRunnerLogger.logWarning(`Failed to cleanup images before job creation: ${cleanupError}`);
+          // Continue anyway - image might already be cached
+        }
+      }
+      
       let output = '';
       try {
         CloudRunnerLogger.log('Job does not exist');

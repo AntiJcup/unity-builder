@@ -147,6 +147,19 @@ class KubernetesPods {
         return false; // PreStopHook failure alone is not fatal if container status is unclear
       }
 
+      // Check if pod was evicted due to disk pressure - this is an infrastructure issue
+      const wasEvicted = errorDetails.some((detail) =>
+        detail.toLowerCase().includes('evicted') || detail.toLowerCase().includes('diskpressure'),
+      );
+      if (wasEvicted) {
+        const evictionMessage = `Pod ${podName} was evicted due to disk pressure. This is a test infrastructure issue - the cluster doesn't have enough disk space.`;
+        CloudRunnerLogger.logWarning(evictionMessage);
+        CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
+        throw new Error(
+          `${evictionMessage}\nThis indicates the test environment needs more disk space or better cleanup.\n${errorDetails.join('\n')}`,
+        );
+      }
+
       // Exit code 137 (128 + 9) means SIGKILL - container was killed by system (often OOM)
       // If this happened with PreStopHook failure, it might be a resource issue, not a real failure
       // Be lenient if we only have PreStopHook/ExceededGracePeriod issues

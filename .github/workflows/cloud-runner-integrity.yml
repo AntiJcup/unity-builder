@@ -242,6 +242,27 @@ jobs:
             echo "Taint removed. Checking nodes..."
             kubectl describe nodes | grep -i taint || echo "No taints found"
           fi
+          # Wait for disk pressure condition to clear (not just taint)
+          echo "Waiting for disk pressure condition to clear on nodes..."
+          for i in {1..20}; do
+            HAS_DISK_PRESSURE_CONDITION=$(kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"' && echo "true" || echo "false")
+            if [ "$HAS_DISK_PRESSURE_CONDITION" = "true" ]; then
+              echo "Disk pressure condition still present, waiting... ($i/20)"
+              sleep 2
+            else
+              echo "Disk pressure condition cleared, proceeding with test"
+              break
+            fi
+          done
+          # Final check - if condition still exists, remove taint and wait a bit more
+          if kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"'; then
+            echo "WARNING: Disk pressure condition still exists. Removing taint and waiting 10 seconds..."
+            NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
+            for node in $NODE_NAMES; do
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+            done
+            sleep 10
+          fi
       - name: Run cloud-runner-image test (validate image creation)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
@@ -470,6 +491,27 @@ jobs:
             done
             echo "Taint removed. Checking nodes..."
             kubectl describe nodes | grep -i taint || echo "No taints found"
+          fi
+          # Wait for disk pressure condition to clear (not just taint)
+          echo "Waiting for disk pressure condition to clear on nodes..."
+          for i in {1..20}; do
+            HAS_DISK_PRESSURE_CONDITION=$(kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"' && echo "true" || echo "false")
+            if [ "$HAS_DISK_PRESSURE_CONDITION" = "true" ]; then
+              echo "Disk pressure condition still present, waiting... ($i/20)"
+              sleep 2
+            else
+              echo "Disk pressure condition cleared, proceeding with test"
+              break
+            fi
+          done
+          # Final check - if condition still exists, remove taint and wait a bit more
+          if kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"'; then
+            echo "WARNING: Disk pressure condition still exists. Removing taint and waiting 10 seconds..."
+            NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
+            for node in $NODE_NAMES; do
+              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
+            done
+            sleep 10
           fi
       - name: Run cloud-runner-s3-steps test (validate S3 operations with K8s)
         timeout-minutes: 30

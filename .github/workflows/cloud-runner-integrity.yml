@@ -29,7 +29,7 @@ jobs:
     name: Cloud Runner Tests (K8s)
     runs-on: ubuntu-latest
     env:
-      K3D_NODE_CONTAINERS: "k3d-unity-builder-server-0 k3d-unity-builder-agent-0"
+      K3D_NODE_CONTAINERS: "k3d-unity-builder-agent-0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,18 +95,28 @@ jobs:
           # Clean up disk space on the k3d node to prevent evictions and disk pressure
           echo "Cleaning up disk space on k3d nodes..."
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "df -h && docker system prune -af --volumes || true" || true
-          done
+          cleanup_k3d_nodes() {
+            for NODE in $K3D_NODE_CONTAINERS; do
+              docker exec "$NODE" sh -c "
+                crictl rmi --prune 2>/dev/null || true
+                crictl rmp --all 2>/dev/null || true
+                crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                find /var/log -type f -name '*.log' -delete 2>/dev/null || true
+                find /tmp -type f -delete 2>/dev/null || true
+                df -h /
+              " || true
+            done
+          }
+          cleanup_k3d_nodes
           docker system prune -af --volumes || true
           # Wait for disk pressure taints to clear (with timeout)
           echo "Checking for disk pressure taints on nodes..."
           for i in {1..30}; do
             if kubectl describe nodes | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, waiting for it to clear... ($i/30)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              done
+              cleanup_k3d_nodes
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -196,28 +206,37 @@ jobs:
           echo "Cleaning up disk space on k3d node..."
           # Use containerd/crictl commands (docker not available in k3d nodes)
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "crictl rmp --all 2>/dev/null || true" || true
-          done
+          cleanup_k3d_nodes() {
+            for NODE in $K3D_NODE_CONTAINERS; do
+              docker exec "$NODE" sh -c "
+                crictl rmi --prune 2>/dev/null || true
+                crictl rmp --all 2>/dev/null || true
+                crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                find /var/log -type f -name '*.log' -delete 2>/dev/null || true
+                find /tmp -type f -delete 2>/dev/null || true
+                find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true
+                df -h /
+              " || true
+            done
+          }
+          cleanup_k3d_nodes
           # Clean up containerd snapshots and images more aggressively
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
-          done
-          # Clean up old logs and temporary files
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "find /var/log -type f -name '*.log' -delete 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "find /tmp -type f -delete 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "df -h" 2>/dev/null || true
-          done
+          cleanup_k3d_nodes
           # Wait for disk pressure taints to clear before proceeding
           echo "Checking for disk pressure taints..."
           for i in {1..20}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up and waiting... ($i/20)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               sleep 3
@@ -398,14 +417,26 @@ jobs:
           # Clean up disk space on k3d node
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               sleep 2
@@ -421,17 +452,29 @@ jobs:
           docker system prune -af --volumes || true
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
               done
               sleep 3
             else
@@ -506,14 +549,26 @@ jobs:
           # Clean up disk space on k3d node
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               sleep 2
@@ -529,7 +584,13 @@ jobs:
           docker system prune -af --volumes || true
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           # Wait for disk pressure taints to clear (with aggressive cleanup)
           # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
@@ -546,8 +607,11 @@ jobs:
               # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
               # Clean up k3s containerd snapshots and images
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
-                docker exec "$NODE" sh -c "crictl rmp --all 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                " || true
               done
               # Clean up old containerd snapshots
               for NODE in $K3D_NODE_CONTAINERS; do
@@ -555,9 +619,11 @@ jobs:
               done
               # Clean up k3s logs and temp files
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
-                docker exec "$NODE" sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
-                docker exec "$NODE" sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true
+                  find /tmp -type f -mtime +0 -delete 2>/dev/null || true
+                  find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true
+                " || true
               done
               # Clean up host docker
               docker system prune -af --volumes || true
@@ -716,17 +782,29 @@ jobs:
           docker system prune -af --volumes || true
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
               done
               sleep 3
             else
@@ -824,17 +902,29 @@ jobs:
           docker system prune -af --volumes || true
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "
+              crictl rmi --prune 2>/dev/null || true
+              crictl rmp --all 2>/dev/null || true
+              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+            " || true
           done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "
+                  crictl rmi --prune 2>/dev/null || true
+                  crictl rmp --all 2>/dev/null || true
+                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
+                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
+                " || true
               done
               docker system prune -af --volumes || true
               for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
               done
               sleep 3
             else

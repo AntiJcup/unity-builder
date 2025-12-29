@@ -132,6 +132,15 @@ class KubernetesJobSpecFactory {
             },
           ],
           restartPolicy: 'Never',
+          // Add tolerations for CI/test environments to allow scheduling even with disk pressure
+          // This is acceptable for CI where we aggressively clean up disk space
+          tolerations: [
+            {
+              key: 'node.kubernetes.io/disk-pressure',
+              operator: 'Exists',
+              effect: 'NoSchedule',
+            },
+          ],
         },
       },
     };

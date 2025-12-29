@@ -28,6 +28,8 @@ jobs:
   k8s:
     name: Cloud Runner Tests (K8s)
     runs-on: ubuntu-latest
+    env:
+      K3D_NODE_CONTAINERS: "k3d-unity-builder-server-0 k3d-unity-builder-agent-0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,14 +94,19 @@ jobs:
             echo "Cluster connectivity test - if this fails, LocalStack may not be accessible from k3d"
           # Clean up disk space on the k3d node to prevent evictions and disk pressure
           echo "Cleaning up disk space on k3d nodes..."
-          docker exec k3d-unity-builder-agent-0 sh -c "df -h && docker system prune -af --volumes || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "df -h && docker system prune -af --volumes || true" || true
+          done
           docker system prune -af --volumes || true
           # Wait for disk pressure taints to clear (with timeout)
           echo "Checking for disk pressure taints on nodes..."
           for i in {1..30}; do
             if kubectl describe nodes | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, waiting for it to clear... ($i/30)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -113,14 +120,21 @@ jobs:
         run: |
           echo "Pre-pulling Unity image into k3d node to avoid evictions during tests..."
           # Clean up old images first to make space
-          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done
           # Pre-pull the Unity image that will be used in tests
           # This ensures it's cached and doesn't need to be pulled during test execution
           UNITY_IMAGE="unityci/editor:ubuntu-2021.3.45f1-base-3"
           echo "Pulling ${UNITY_IMAGE} into k3d node..."
-          docker exec k3d-unity-builder-agent-0 sh -c "crictl pull ${UNITY_IMAGE} 2>&1 || echo 'Image pull failed or already exists'" || true
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl pull ${UNITY_IMAGE} 2>&1 || echo 'Image pull failed or already exists'" || true
+          done
           echo "Image pre-pull completed. Checking disk space..."
-          docker exec k3d-unity-builder-agent-0 sh -c "df -h / | tail -1" || true
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "df -h / | tail -1" || true
+          done
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -181,21 +195,30 @@ jobs:
           # Clean up disk space on k3d node to prevent ephemeral-storage evictions and disk pressure
           echo "Cleaning up disk space on k3d node..."
           # Use containerd/crictl commands (docker not available in k3d nodes)
-          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
-          docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "crictl rmp --all 2>/dev/null || true" || true
+          done
           # Clean up containerd snapshots and images more aggressively
-          docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+          done
           # Clean up old logs and temporary files
-          docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -delete 2>/dev/null || true" || true
-          docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -delete 2>/dev/null || true" || true
-          docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
-          docker exec k3d-unity-builder-agent-0 sh -c "df -h" 2>/dev/null || true
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "find /var/log -type f -name '*.log' -delete 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "find /tmp -type f -delete 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "df -h" 2>/dev/null || true
+          done
           # Wait for disk pressure taints to clear before proceeding
           echo "Checking for disk pressure taints..."
           for i in {1..20}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up and waiting... ($i/20)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 3
             else
@@ -209,33 +232,43 @@ jobs:
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure taints to clear (with aggressive cleanup)
           # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
           PREVIOUS_DISK_USAGE=100
           for i in {1..10}; do
             HAS_DISK_PRESSURE=$(kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure" && echo "true" || echo "false")
-            if [ "$HAS_DISK_PRESSURE" = "true" ]; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
-              # Check actual disk usage on the node
-              DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
-              echo "Current disk usage on k3d node: ${DISK_USAGE}%"
-              
-              # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
-              # Clean up k3s containerd snapshots and images
-              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
-              # Clean up old containerd snapshots
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
-              # Clean up k3s logs and temp files
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
-              # Clean up host docker
-              docker system prune -af --volumes || true
-              
-              # Check if disk usage improved
-              NEW_DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              if [ "$HAS_DISK_PRESSURE" = "true" ]; then
+                echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
+                # Check actual disk usage on the node
+                PRIMARY_NODE=$(echo "$K3D_NODE_CONTAINERS" | awk '{print $1}')
+                DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+                echo "Current disk usage on k3d node: ${DISK_USAGE}%"
+                
+                # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
+                # Clean up k3s containerd snapshots and images
+                for NODE in $K3D_NODE_CONTAINERS; do
+                  docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+                  docker exec "$NODE" sh -c "crictl rmp --all 2>/dev/null || true" || true
+                done
+                # Clean up old containerd snapshots
+                for NODE in $K3D_NODE_CONTAINERS; do
+                  docker exec "$NODE" sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+                done
+                # Clean up k3s logs and temp files
+                for NODE in $K3D_NODE_CONTAINERS; do
+                  docker exec "$NODE" sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
+                  docker exec "$NODE" sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
+                  docker exec "$NODE" sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
+                done
+                # Clean up host docker
+                docker system prune -af --volumes || true
+                
+                # Check if disk usage improved
+                NEW_DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
               if [ "$NEW_DISK_USAGE" != "unknown" ] && [ "$PREVIOUS_DISK_USAGE" != "unknown" ]; then
                 if [ "$NEW_DISK_USAGE" -ge "$PREVIOUS_DISK_USAGE" ] && [ "$i" -ge 3 ]; then
                   echo "Disk usage not improving (${PREVIOUS_DISK_USAGE}% -> ${NEW_DISK_USAGE}%), breaking cleanup loop and removing taint manually"
@@ -363,12 +396,17 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -381,13 +419,20 @@ jobs:
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              done
               sleep 3
             else
               echo "No disk pressure taints found, proceeding with test"
@@ -459,12 +504,17 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -477,7 +527,10 @@ jobs:
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure taints to clear (with aggressive cleanup)
           # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
           PREVIOUS_DISK_USAGE=100
@@ -486,24 +539,31 @@ jobs:
             if [ "$HAS_DISK_PRESSURE" = "true" ]; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
               # Check actual disk usage on the node
-              DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              PRIMARY_NODE=$(echo "$K3D_NODE_CONTAINERS" | awk '{print $1}')
+              DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
               echo "Current disk usage on k3d node: ${DISK_USAGE}%"
               
               # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
               # Clean up k3s containerd snapshots and images
-              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "crictl rmp --all 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "crictl rmp --all 2>/dev/null || true" || true
+              done
               # Clean up old containerd snapshots
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
+              done
               # Clean up k3s logs and temp files
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
-              docker exec k3d-unity-builder-agent-0 sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "find /tmp -type f -mtime +0 -delete 2>/dev/null || true" || true
+                docker exec "$NODE" sh -c "find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true" || true
+              done
               # Clean up host docker
               docker system prune -af --volumes || true
               
               # Check if disk usage improved
-              NEW_DISK_USAGE=$(docker exec k3d-unity-builder-agent-0 sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
+              NEW_DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
               if [ "$NEW_DISK_USAGE" != "unknown" ] && [ "$PREVIOUS_DISK_USAGE" != "unknown" ]; then
                 if [ "$NEW_DISK_USAGE" -ge "$PREVIOUS_DISK_USAGE" ] && [ "$i" -ge 3 ]; then
                   echo "Disk usage not improving (${PREVIOUS_DISK_USAGE}% -> ${NEW_DISK_USAGE}%), breaking cleanup loop and removing taint manually"
@@ -631,12 +691,17 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -649,13 +714,20 @@ jobs:
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              done
               sleep 3
             else
               echo "No disk pressure taints found, proceeding with test"
@@ -727,12 +799,17 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else
@@ -745,13 +822,20 @@ jobs:
           echo "Ensuring disk pressure is cleared before test..."
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           for i in {1..30}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
-              docker exec k3d-unity-builder-agent-0 sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker images -q | xargs -r docker rmi -f 2>/dev/null || true" || true
+              done
               sleep 3
             else
               echo "No disk pressure taints found, proceeding with test"
@@ -822,12 +906,17 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
           # Clean up disk space on k3d node
-          docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+          done
           # Wait for disk pressure to clear
           for i in {1..15}; do
             if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
               echo "Disk pressure detected, cleaning up... ($i/15)"
-              docker exec k3d-unity-builder-agent-0 sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              for NODE in $K3D_NODE_CONTAINERS; do
+                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+              done
               docker system prune -af --volumes || true
               sleep 2
             else

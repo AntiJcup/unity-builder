@@ -205,6 +205,11 @@ jobs:
               # Remove all stopped containers and unused images
               docker exec k3d-unity-builder-agent-0 sh -c "docker container prune -f 2>/dev/null || true" || true
               docker exec k3d-unity-builder-agent-0 sh -c "docker image prune -af 2>/dev/null || true" || true
+              # Remove all unused images (including those with tags) to free more space
+              docker exec k3d-unity-builder-agent-0 sh -c "docker images --format '{{.ID}}' | xargs -r docker rmi -f 2>/dev/null || true" || true
+              # Clean up k3s containerd data
+              docker exec k3d-unity-builder-agent-0 sh -c "rm -rf /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*/fs 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
               # Clean up host docker
               docker system prune -af --volumes || true
               sleep 5
@@ -416,6 +421,11 @@ jobs:
               # Remove all stopped containers and unused images
               docker exec k3d-unity-builder-agent-0 sh -c "docker container prune -f 2>/dev/null || true" || true
               docker exec k3d-unity-builder-agent-0 sh -c "docker image prune -af 2>/dev/null || true" || true
+              # Remove all unused images (including those with tags) to free more space
+              docker exec k3d-unity-builder-agent-0 sh -c "docker images --format '{{.ID}}' | xargs -r docker rmi -f 2>/dev/null || true" || true
+              # Clean up k3s containerd data
+              docker exec k3d-unity-builder-agent-0 sh -c "rm -rf /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*/fs 2>/dev/null || true" || true
+              docker exec k3d-unity-builder-agent-0 sh -c "find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true" || true
               # Clean up host docker
               docker system prune -af --volumes || true
               sleep 5

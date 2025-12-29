@@ -50,14 +50,29 @@ describe('Cloud Runner Kubernetes', () => {
 
       const fallbackLogsUnavailableMessage =
         'Pod logs unavailable - pod may have been terminated before logs could be collected.';
+      const incompleteLogsMessage =
+        'Pod logs incomplete - "Collected Logs" marker not found. Pod may have been terminated before post-build completed.';
 
       // If we hit the aggressive fallback path and couldn't retrieve any logs from the pod,
       // don't assert on specific Unity log contents – just assert that we got the fallback message.
       // This makes the test resilient to cluster-level evictions / PreStop hook failures while still
       // ensuring Cloud Runner surfaces a useful message in BuildResults.
+      // However, if we got logs but they're incomplete (missing "Collected Logs"), the test should fail
+      // as this indicates the build didn't complete successfully (pod was evicted/killed).
       if (results.includes(fallbackLogsUnavailableMessage)) {
+        // Complete failure - no logs at all (acceptable for eviction scenarios)
         expect(results).toContain(fallbackLogsUnavailableMessage);
+        CloudRunnerLogger.log('Test passed with fallback message (pod was evicted before any logs were written)');
+      } else if (results.includes(incompleteLogsMessage)) {
+        // Incomplete logs - we got some output but missing "Collected Logs" (build didn't complete)
+        // This should fail the test as the build didn't succeed
+        throw new Error(
+          `Build did not complete successfully: ${incompleteLogsMessage}\n` +
+            `This indicates the pod was evicted or killed before post-build completed.\n` +
+            `Build results:\n${results.substring(0, 500)}`,
+        );
       } else {
+        // Normal case - logs are complete
         expect(results).toContain('Collected Logs');
         expect(results).toContain(libraryString);
         expect(results).toContain(buildSucceededString);

@@ -217,7 +217,7 @@ class KubernetesTaskRunner {
     // If output is empty, we need to be more aggressive about getting logs
     const needsFallback = output.trim().length === 0;
     const missingCollectedLogs = !output.includes('Collected Logs');
-    
+
     if (needsFallback) {
       CloudRunnerLogger.log('Output is empty, attempting aggressive log collection fallback...');
       // Give the pod a moment to finish writing logs before we try to read them
@@ -234,8 +234,8 @@ class KubernetesTaskRunner {
         const reason = needsFallback
           ? 'output is empty'
           : missingCollectedLogs
-            ? 'Collected Logs missing from output'
-            : 'pod is terminated';
+          ? 'Collected Logs missing from output'
+          : 'pod is terminated';
         CloudRunnerLogger.log(
           `Pod is ${isPodStillRunning ? 'running' : 'terminated'} and ${reason}, reading log file as fallback...`,
         );
@@ -354,7 +354,8 @@ class KubernetesTaskRunner {
           output = 'Pod logs unavailable - pod may have been terminated before logs could be collected.\n';
         } else if (!output.includes('Collected Logs')) {
           // We have some output but missing "Collected Logs" - append the fallback message
-          output += '\nPod logs incomplete - "Collected Logs" marker not found. Pod may have been terminated before post-build completed.\n';
+          output +=
+            '\nPod logs incomplete - "Collected Logs" marker not found. Pod may have been terminated before post-build completed.\n';
         }
       }
     } catch (fallbackError: any) {
@@ -473,7 +474,7 @@ class KubernetesTaskRunner {
           // Pod is complete if it's not Pending or Unknown - it might be Running, Succeeded, or Failed
           // For Failed/Succeeded pods, we still want to try to get logs, so we mark as complete
           waitComplete = phase !== 'Pending' && phase !== 'Unknown';
-          
+
           // If pod completed (Succeeded/Failed), log it but don't throw - we'll try to get logs
           if (waitComplete && phase !== 'Running') {
             CloudRunnerLogger.log(`Pod ${podName} completed with phase: ${phase}. Will attempt to retrieve logs.`);
@@ -481,7 +482,7 @@ class KubernetesTaskRunner {
 
           if (phase === 'Pending') {
             consecutivePendingCount++;
-            
+
             // Check for scheduling failures in events (faster than waiting for conditions)
             try {
               const events = await kubeClient.listNamespacedEvent(namespace);
@@ -489,7 +490,7 @@ class KubernetesTaskRunner {
               const failedSchedulingEvents = podEvents.filter(
                 (x) => x.reason === 'FailedScheduling' || x.reason === 'SchedulingGated',
               );
-              
+
               if (failedSchedulingEvents.length > 0) {
                 const schedulingMessage = failedSchedulingEvents
                   .map((x) => `${x.reason}: ${x.message || ''}`)
@@ -502,11 +503,11 @@ class KubernetesTaskRunner {
             } catch {
               // Ignore event fetch errors
             }
-            
+
             // For tests, fail faster if stuck in Pending (2 minutes = 8 checks at 15s interval)
             const isTest = process.env['cloudRunnerTests'] === 'true';
             const maxPendingChecks = isTest ? 8 : 80; // 2 minutes for tests, 20 minutes for production
-            
+
             if (consecutivePendingCount >= maxPendingChecks) {
               message = `Pod ${podName} stuck in Pending state for too long (${consecutivePendingCount} checks). This indicates a scheduling problem.`;
               // Get events for context
@@ -526,7 +527,7 @@ class KubernetesTaskRunner {
               waitComplete = false;
               return true; // Exit wait loop to throw error
             }
-            
+
             // Log diagnostic info every 4 checks (1 minute) if still pending
             if (consecutivePendingCount % 4 === 0) {
               const pendingMessage = `Pod ${podName} still Pending (check ${consecutivePendingCount}/${maxPendingChecks}). Phase: ${phase}`;

@@ -120,6 +120,32 @@ jobs:
           else
             echo "No disk pressure taints found"
           fi
+      - name: Pre-pull Unity image into k3d cluster
+        timeout-minutes: 10
+        run: |
+          echo "Pre-pulling Unity image into k3d cluster to avoid runtime disk pressure..."
+          # Pre-pull the Unity image that will be used in tests
+          # This ensures it's cached in the k3d node's containerd and won't need to be pulled during test execution
+          # Images are stored separately from pod ephemeral storage, so this doesn't consume pod runtime space
+          UNITY_IMAGE="unityci/editor:ubuntu-2021.3.45f1-base-3"
+          echo "Creating a temporary pod to pull and cache the Unity image..."
+          # Use a small pod to pull the image, then delete the pod
+          # The image will remain cached in containerd for subsequent pods
+          kubectl run image-puller --image="$UNITY_IMAGE" --restart=Never --command -- sleep 1 || true
+          # Wait for image to be pulled (up to 10 minutes for large images)
+          echo "Waiting for image pull to complete (this may take several minutes for 3.9GB image)..."
+          timeout 600 kubectl wait --for=condition=Ready pod/image-puller --timeout=600s 2>/dev/null || \
+            timeout 600 kubectl wait --for=condition=PodScheduled pod/image-puller --timeout=600s 2>/dev/null || true
+          # Wait a bit more for image pull to complete even if pod isn't ready
+          sleep 30
+          # Delete the pod - image remains cached in containerd
+          kubectl delete pod image-puller --ignore-not-found=true || true
+          echo "Image pre-pull completed. Image is now cached in k3d node."
+          echo "Subsequent pods will use 'IfNotPresent' policy and won't need to pull the image again."
+          # Show disk usage after pre-pull
+          echo "Disk usage after pre-pull:"
+          docker exec k3d-unity-builder-agent-0 sh -c "df -h / | tail -1" || true
+          docker exec k3d-unity-builder-server-0 sh -c "df -h / | tail -1" || true
       - uses: actions/setup-node@v4
         with:
           node-version: 20

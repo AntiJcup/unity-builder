@@ -64,12 +64,11 @@ jobs:
         run: |
           # Only delete if exists - don't aggressively clean up (may cause issues)
           k3d cluster delete unity-builder || true
-          # Create cluster with explicit eviction thresholds to prevent premature evictions
-          # host.k3d.internal will allow pods to access host services (LocalStack)
+          # Create cluster - host.k3d.internal will allow pods to access host services (LocalStack)
+          # Note: Removed eviction thresholds as they may prevent pod scheduling
           k3d cluster create unity-builder \
             --agents 1 \
-            --wait \
-            --k3s-arg '--kubelet-arg=eviction-hard=imagefs.available<5%,memory.available<100Mi@agent:*'
+            --wait
           kubectl config current-context | cat
       - name: Verify cluster readiness and LocalStack connectivity
         timeout-minutes: 2

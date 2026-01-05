@@ -500,13 +500,42 @@ class KubernetesTaskRunner {
                 waitComplete = false;
                 return true; // Exit wait loop to throw error
               }
+              
+              // Check if pod is actively pulling an image - if so, allow more time
+              const isPullingImage = podEvents.some(
+                (x) => x.reason === 'Pulling' || x.reason === 'Pulled' || x.message?.includes('Pulling image'),
+              );
+              const hasImagePullError = podEvents.some(
+                (x) => x.reason === 'Failed' && (x.message?.includes('pull') || x.message?.includes('image')),
+              );
+              
+              if (hasImagePullError) {
+                message = `Pod ${podName} failed to pull image. Check image availability and credentials.`;
+                CloudRunnerLogger.logWarning(message);
+                waitComplete = false;
+                return true; // Exit wait loop to throw error
+              }
+              
+              // If actively pulling image, reset pending count to allow more time
+              // Large images (like Unity 3.9GB) can take 3-5 minutes to pull
+              if (isPullingImage && consecutivePendingCount > 4) {
+                CloudRunnerLogger.log(`Pod ${podName} is pulling image (check ${consecutivePendingCount}). This may take several minutes for large images.`);
+                // Don't increment consecutivePendingCount if we're actively pulling
+                consecutivePendingCount = Math.max(4, consecutivePendingCount - 1);
+              }
             } catch {
               // Ignore event fetch errors
             }
 
-            // For tests, fail faster if stuck in Pending (2 minutes = 8 checks at 15s interval)
+            // For tests, allow more time if image is being pulled (large images need 5+ minutes)
+            // Otherwise fail faster if stuck in Pending (2 minutes = 8 checks at 15s interval)
             const isTest = process.env['cloudRunnerTests'] === 'true';
-            const maxPendingChecks = isTest ? 8 : 80; // 2 minutes for tests, 20 minutes for production
+            const isPullingImage = containerStatuses.some(
+              (cs: any) => cs.state?.waiting?.reason === 'ImagePull' || cs.state?.waiting?.reason === 'ErrImagePull',
+            ) || conditions.some((c: any) => c.reason?.includes('Pulling'));
+            
+            // Allow up to 20 minutes for image pulls in tests (80 checks), 2 minutes otherwise
+            const maxPendingChecks = isTest && isPullingImage ? 80 : isTest ? 8 : 80;
 
             if (consecutivePendingCount >= maxPendingChecks) {
               message = `Pod ${podName} stuck in Pending state for too long (${consecutivePendingCount} checks). This indicates a scheduling problem.`;

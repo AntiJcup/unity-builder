@@ -140,10 +140,28 @@ jobs:
           sleep 30
           # Delete the pod - image remains cached in containerd
           kubectl delete pod image-puller --ignore-not-found=true || true
+          # Wait for pod to be fully deleted and ephemeral storage to be reclaimed
+          echo "Waiting for pre-pull pod to be fully cleaned up and ephemeral storage reclaimed..."
+          for i in {1..30}; do
+            if ! kubectl get pod image-puller 2>/dev/null; then
+              echo "Pre-pull pod fully deleted (attempt $i/30)"
+              break
+            fi
+            sleep 2
+          done
+          # Give k3s time to reclaim ephemeral storage
+          sleep 5
+          # Force cleanup of any remaining ephemeral storage from the pre-pull pod
+          echo "Cleaning up any remaining ephemeral storage from pre-pull pod..."
+          docker exec k3d-unity-builder-server-0 sh -c "
+            crictl rmp --all 2>/dev/null || true
+            find /var/lib/rancher/k3s/agent/containerd/io.containerd.runtime.v2.task/default -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
+            find /var/lib/rancher/k3s/agent/containerd -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
+          " || true
           echo "Image pre-pull completed. Image is now cached in k3d node."
           echo "Subsequent pods will use 'IfNotPresent' policy and won't need to pull the image again."
-          # Show disk usage after pre-pull
-          echo "Disk usage after pre-pull:"
+          # Show disk usage after pre-pull and cleanup
+          echo "Disk usage after pre-pull and cleanup:"
           docker exec k3d-unity-builder-agent-0 sh -c "df -h / | tail -1" || true
           docker exec k3d-unity-builder-server-0 sh -c "df -h / | tail -1" || true
       - uses: actions/setup-node@v4

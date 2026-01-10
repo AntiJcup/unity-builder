@@ -59,11 +59,27 @@ jobs:
         run: |
           awslocal s3 mb s3://$AWS_STACK_NAME || true
           awslocal s3 ls
+      - name: Clean up host disk space before creating k3d cluster
+        run: |
+          echo "Cleaning up host disk space before creating k3d cluster..."
+          echo "Current disk usage:"
+          df -h
+          # Clean up any leftover k3d clusters/images from previous runs first
+          k3d cluster delete unity-builder || true
+          k3d image delete --all || true
+          # Clean up Docker images and containers on host to free space for k3d
+          # This is critical: k3d nodes share the host's disk, so we need space BEFORE creating the cluster
+          # Note: We use --filter "until=24h" to avoid removing LocalStack which was just started
+          docker system prune -af --volumes --filter "until=24h" || true
+          # Remove unused images (keep images used by running containers like LocalStack)
+          docker image prune -af || true
+          # Remove unused volumes (but keep volumes used by running containers)
+          docker volume prune -f || true
+          echo "Disk usage after cleanup:"
+          df -h
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
-          # Only delete if exists - don't aggressively clean up (may cause issues)
-          k3d cluster delete unity-builder || true
           # Create cluster - host.k3d.internal will allow pods to access host services (LocalStack)
           # Note: Removed eviction thresholds as they may prevent pod scheduling
           k3d cluster create unity-builder \

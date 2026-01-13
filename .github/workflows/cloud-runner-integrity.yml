@@ -76,20 +76,52 @@ jobs:
             -e DATA_DIR=/tmp/localstack/data \
             --tmpfs /tmp/localstack/data:rw,noexec,nosuid,size=100m \
             localstack/localstack:latest || true
-          # Wait for LocalStack to be ready
+          # Wait for LocalStack to be ready - check both health endpoint and S3 service
           echo "Waiting for LocalStack to be ready..."
-          for i in {1..30}; do
-            if curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
-              echo "LocalStack is ready (attempt $i/30)"
+          MAX_ATTEMPTS=60
+          READY=false
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            # Check if container is running
+            if ! docker ps | grep -q localstack-main; then
+              echo "LocalStack container not running (attempt $i/$MAX_ATTEMPTS)"
+              sleep 2
+              continue
+            fi
+            # Check health endpoint - must return valid JSON
+            HEALTH=$(curl -s http://localhost:4566/_localstack/health 2>/dev/null || echo "")
+            if [ -z "$HEALTH" ] || ! echo "$HEALTH" | grep -q "services"; then
+              echo "LocalStack health endpoint not ready (attempt $i/$MAX_ATTEMPTS)"
+              sleep 2
+              continue
+            fi
+            # Verify S3 service is in the health response
+            if echo "$HEALTH" | grep -q '"s3"'; then
+              echo "LocalStack is ready with S3 service (attempt $i/$MAX_ATTEMPTS)"
+              echo "Health check response:"
+              echo "$HEALTH" | head -10
+              READY=true
               break
             fi
-            echo "Waiting for LocalStack... ($i/30)"
+            echo "Waiting for LocalStack S3 service... ($i/$MAX_ATTEMPTS)"
             sleep 2
           done
-          # Verify LocalStack is running
-          echo "Checking LocalStack status..."
-          curl -s http://localhost:4566/_localstack/health | head -10 || echo "LocalStack health check failed"
-          docker ps | grep localstack || echo "No LocalStack container found"
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: LocalStack did not become ready after $MAX_ATTEMPTS attempts"
+            echo "Container status:"
+            docker ps -a | grep localstack || echo "No LocalStack container found"
+            echo "Container logs:"
+            docker logs localstack-main --tail 100 || true
+            exit 1
+          fi
+          # Final verification
+          echo "Final LocalStack verification..."
+          docker ps | grep localstack || echo "WARNING: No LocalStack container found"
+          curl -s http://localhost:4566/_localstack/health | head -10 || echo "WARNING: LocalStack health check failed"
+          # Show LocalStack logs if health check fails
+          if ! curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+            echo "LocalStack container logs:"
+            docker logs localstack-main --tail 50 || true
+          fi
       - name: Install AWS CLI tools
         run: |
           # Install AWS CLI if not already available
@@ -102,15 +134,53 @@ jobs:
           awslocal --version || echo "awslocal not available, will use aws CLI with endpoint-url"
       - name: Create S3 bucket for tests (host LocalStack)
         run: |
+          # Verify LocalStack is still accessible before creating bucket
+          echo "Verifying LocalStack connectivity..."
+          for i in {1..10}; do
+            if curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+              echo "LocalStack is accessible"
+              break
+            fi
+            echo "Waiting for LocalStack... ($i/10)"
+            sleep 1
+          done
           # Use awslocal if available, otherwise use aws CLI with endpoint-url
-          if command -v awslocal > /dev/null 2>&1; then
-          awslocal s3 mb s3://$AWS_STACK_NAME || true
-          awslocal s3 ls
-          elif command -v aws > /dev/null 2>&1; then
-            aws --endpoint-url=http://localhost:4566 s3 mb s3://$AWS_STACK_NAME || true
-            aws --endpoint-url=http://localhost:4566 s3 ls || true
-          else
-            echo "Neither awslocal nor aws CLI available"
+          # Retry bucket creation in case LocalStack needs a moment
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          BUCKET_CREATED=false
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$BUCKET_CREATED" != "true" ]; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "Attempting to create S3 bucket (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+            if command -v awslocal > /dev/null 2>&1; then
+              if awslocal s3 mb s3://$AWS_STACK_NAME 2>&1; then
+                echo "Bucket created successfully with awslocal"
+                awslocal s3 ls
+                BUCKET_CREATED=true
+              else
+                echo "Bucket creation failed with awslocal, will retry..."
+                sleep 2
+              fi
+            elif command -v aws > /dev/null 2>&1; then
+              if aws --endpoint-url=http://localhost:4566 s3 mb s3://$AWS_STACK_NAME 2>&1; then
+                echo "Bucket created successfully with aws CLI"
+                aws --endpoint-url=http://localhost:4566 s3 ls || true
+                BUCKET_CREATED=true
+              else
+                echo "Bucket creation failed with aws CLI, will retry..."
+                sleep 2
+              fi
+            else
+              echo "Neither awslocal nor aws CLI available"
+              exit 1
+            fi
+          done
+          if [ "$BUCKET_CREATED" != "true" ]; then
+            echo "ERROR: Failed to create S3 bucket after $MAX_RETRIES attempts"
+            echo "LocalStack container status:"
+            docker ps | grep localstack || echo "LocalStack container not running"
+            echo "LocalStack logs:"
+            docker logs localstack-main --tail 50 || true
             exit 1
           fi
       - name: Create k3s cluster (k3d)

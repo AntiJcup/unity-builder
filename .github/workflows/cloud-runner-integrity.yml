@@ -25,16 +25,22 @@ env:
   USE_IL2CPP: false
 
 jobs:
-  k8s:
-    name: Cloud Runner Tests (K8s)
+  cloud-runner-tests:
+    name: Cloud Runner Integrity Tests
     runs-on: ubuntu-latest
     env:
       K3D_NODE_CONTAINERS: 'k3d-unity-builder-agent-0'
     steps:
+      # ==========================================
+      # SETUP SECTION
+      # ==========================================
       - uses: actions/checkout@v4
         with:
           lfs: false
-      # Set up Kubernetes (k3s via k3d)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
         with:
@@ -43,23 +49,20 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version | cat
-      - name: Clean up host disk space and prepare for k3d and LocalStack
+      - name: Initial disk space cleanup
         run: |
-          echo "Cleaning up host disk space before creating k3d cluster and LocalStack..."
+          echo "Initial disk space cleanup..."
           echo "Current disk usage:"
           df -h
-          # Clean up any leftover k3d clusters/images from previous runs first
+          # Clean up any leftover k3d clusters/images from previous runs
           k3d cluster delete unity-builder || true
           k3d image delete --all || true
           # Stop any existing LocalStack container
           docker stop localstack-main 2>/dev/null || true
           docker rm localstack-main 2>/dev/null || true
-          # Clean up Docker images and containers on host to free space
-          # This is critical: k3d nodes share the host's disk, so we need space BEFORE creating the cluster
+          # Clean up Docker images and containers on host
           docker system prune -af --volumes || true
-          # Remove unused images
           docker image prune -af || true
-          # Remove unused volumes
           docker volume prune -f || true
           echo "Disk usage after cleanup:"
           df -h
@@ -117,11 +120,6 @@ jobs:
           echo "Final LocalStack verification..."
           docker ps | grep localstack || echo "WARNING: No LocalStack container found"
           curl -s http://localhost:4566/_localstack/health | head -10 || echo "WARNING: LocalStack health check failed"
-          # Show LocalStack logs if health check fails
-          if ! curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
-            echo "LocalStack container logs:"
-            docker logs localstack-main --tail 50 || true
-          fi
       - name: Install AWS CLI tools
         run: |
           # Install AWS CLI if not already available
@@ -183,11 +181,22 @@ jobs:
             docker logs localstack-main --tail 50 || true
             exit 1
           fi
+      - run: yarn install --frozen-lockfile
+
+      # ==========================================
+      # K8S TESTS SECTION
+      # ==========================================
+      - name: Clean up disk space before K8s tests
+        run: |
+          echo "Cleaning up disk space before K8s tests..."
+          rm -rf ./cloud-runner-cache/* || true
+          sudo apt-get clean || true
+          docker system prune -f || true
+          df -h
       - name: Create k3s cluster (k3d)
         timeout-minutes: 5
         run: |
           # Create cluster - host.k3d.internal will allow pods to access host services (LocalStack)
-          # Note: Removed eviction thresholds as they may prevent pod scheduling
           k3d cluster create unity-builder \
             --agents 1 \
             --wait
@@ -215,55 +224,19 @@ jobs:
           kubectl run test-localstack --image=curlimages/curl --rm -i --restart=Never --timeout=10s -- \
             curl -v --max-time 5 http://host.k3d.internal:4566/_localstack/health 2>&1 | head -20 || \
             echo "Cluster connectivity test - if this fails, LocalStack may not be accessible from k3d"
-          # Clean up disk space on the k3d node to prevent evictions and disk pressure
-          echo "Cleaning up disk space on k3d nodes..."
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          cleanup_k3d_nodes() {
-            for NODE in $K3D_NODE_CONTAINERS; do
-              docker exec "$NODE" sh -c "
-                crictl rmi --prune 2>/dev/null || true
-                crictl rmp --all 2>/dev/null || true
-                crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                find /var/log -type f -name '*.log' -delete 2>/dev/null || true
-                find /tmp -type f -delete 2>/dev/null || true
-                df -h /
-              " || true
-            done
-          }
-          cleanup_k3d_nodes
-          docker system prune -af --volumes || true
-          # Check for disk pressure taints (informational only - k3s will manage)
-          echo "Checking for disk pressure taints on nodes..."
-          if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-            echo "WARNING: Disk pressure taint detected. k3s will manage this automatically."
-            kubectl describe nodes | grep -i taint || true
-          else
-            echo "No disk pressure taints found"
-          fi
       - name: Pre-pull Unity image into k3d cluster
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
-          echo "Pre-pulling Unity image into k3d cluster to avoid runtime disk pressure..."
-          # Pre-pull the Unity image that will be used in tests
+          # Pre-pull the Unity image into the k3d cluster before running tests
           # This ensures it's cached in the k3d node's containerd and won't need to be pulled during test execution
-          # Images are stored separately from pod ephemeral storage, so this doesn't consume pod runtime space
           UNITY_IMAGE="unityci/editor:ubuntu-2021.3.45f1-base-3"
           echo "Creating a temporary pod to pull and cache the Unity image..."
-          # Use a small pod to pull the image, then delete the pod
-          # The image will remain cached in containerd for subsequent pods
           kubectl run image-puller --image="$UNITY_IMAGE" --restart=Never --command -- sleep 1 || true
-          # Wait for image to be pulled (up to 10 minutes for large images)
           echo "Waiting for image pull to complete (this may take several minutes for 3.9GB image)..."
           timeout 600 kubectl wait --for=condition=Ready pod/image-puller --timeout=600s 2>/dev/null || \
             timeout 600 kubectl wait --for=condition=PodScheduled pod/image-puller --timeout=600s 2>/dev/null || true
-          # Wait a bit more for image pull to complete even if pod isn't ready
           sleep 30
-          # Delete the pod - image remains cached in containerd
           kubectl delete pod image-puller --ignore-not-found=true || true
-          # Wait for pod to be fully deleted and ephemeral storage to be reclaimed
-          echo "Waiting for pre-pull pod to be fully cleaned up and ephemeral storage reclaimed..."
           for i in {1..30}; do
             if ! kubectl get pod image-puller 2>/dev/null; then
               echo "Pre-pull pod fully deleted (attempt $i/30)"
@@ -271,52 +244,22 @@ jobs:
             fi
             sleep 2
           done
-          # Give k3s time to reclaim ephemeral storage
           sleep 5
-          # Force cleanup of any remaining ephemeral storage from the pre-pull pod
-          echo "Cleaning up any remaining ephemeral storage from pre-pull pod..."
           docker exec k3d-unity-builder-server-0 sh -c "
             crictl rmp --all 2>/dev/null || true
             find /var/lib/rancher/k3s/agent/containerd/io.containerd.runtime.v2.task/default -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
-            find /var/lib/rancher/k3s/agent/containerd -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
           " || true
           echo "Image pre-pull completed. Image is now cached in k3d node."
-          echo "Subsequent pods will use 'IfNotPresent' policy and won't need to pull the image again."
-          # Show disk usage after pre-pull and cleanup
-          echo "Disk usage after pre-pull and cleanup:"
-          docker exec k3d-unity-builder-agent-0 sh -c "df -h / | tail -1" || true
-          docker exec k3d-unity-builder-server-0 sh -c "df -h / | tail -1" || true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'yarn'
-      - name: Clean up disk space before tests
+      - name: Clean up K8s test resources before tests
         run: |
-          # Clean up any leftover cache files from previous runs
-          rm -rf ./cloud-runner-cache/* || true
-          # Clean up system caches and temporary files
-          sudo apt-get clean || true
-          docker system prune -f || true
-          # Show available disk space
-          df -h
-      - run: yarn install --frozen-lockfile
-      - name: Clean up K8s test resources
-        run: |
-          # Clean up K8s resources before each test (only test resources, not system pods)
           echo "Cleaning up K8s test resources..."
-          # Only clean up resources in default namespace and resources matching our test patterns
           kubectl delete jobs --all --ignore-not-found=true -n default || true
-          # Delete completed/failed pods in default namespace (not system pods)
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
           done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
           for i in {1..30}; do
             PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
             if [ "$PVC_COUNT" -eq 0 ]; then
@@ -326,27 +269,17 @@ jobs:
             echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
             sleep 1
           done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
           kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
             if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
               kubectl delete pv "$pv" --ignore-not-found=true || true
             fi
           done || true
-          # Only delete secrets that match our naming pattern (build-credentials-*)
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
           done || true
           sleep 3
-          # Clean up disk space - aggressive cleanup to prevent evictions
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          # Simple cleanup - trust k3s to manage resources
-          echo "Cleaning up test resources..."
           docker system prune -f || true
-      - name: Run cloud-runner-image test (validate image creation)
+      - name: Run cloud-runner-image test (K8s)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
         env:
@@ -360,124 +293,11 @@ jobs:
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
           KUBE_VOLUME_SIZE: 2Gi
-          containerCpu: '1000'
-          containerMemory: '1024'
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_S3_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
+          containerCpu: '512'
+          containerMemory: '512'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up K8s test resources
-        run: |
-          kubectl delete jobs --all --ignore-not-found=true -n default || true
-          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
-            kubectl delete "$pod" --ignore-not-found=true || true
-          done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
-          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
-            kubectl delete "$pvc" --ignore-not-found=true || true
-          done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
-          for i in {1..30}; do
-            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
-            if [ "$PVC_COUNT" -eq 0 ]; then
-              echo "All PVCs deleted"
-              break
-            fi
-            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
-            sleep 1
-          done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
-          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
-            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
-              kubectl delete pv "$pv" --ignore-not-found=true || true
-            fi
-          done || true
-          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
-            kubectl delete "$secret" --ignore-not-found=true || true
-          done || true
-          sleep 3
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          # Clean up disk space on k3d node
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          # Wait for disk pressure to clear
-          for i in {1..15}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up... ($i/15)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                " || true
-              done
-              docker system prune -af --volumes || true
-              sleep 2
-            else
-              break
-            fi
-          done
-      - name: Ensure disk pressure cleared before test
-        timeout-minutes: 2
-        run: |
-          echo "Ensuring disk pressure is cleared before test..."
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          for i in {1..30}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                " || true
-              done
-              docker system prune -af --volumes || true
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
-              done
-              sleep 3
-            else
-              echo "No disk pressure taints found, proceeding with test"
-              break
-            fi
-          done
-      - name: Run cloud-runner-kubernetes test (simple K8s build validation)
+      - name: Run cloud-runner-kubernetes test
         timeout-minutes: 30
         run: yarn run test "cloud-runner-kubernetes" --detectOpenHandles --forceExit --runInBand
         env:
@@ -485,13 +305,12 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
+          TARGET_PLATFORM: StandaloneLinux64
           cloudRunnerTests: true
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
           KUBE_VOLUME_SIZE: 2Gi
-          ENABLE_K8S_E2E: 'true'
           containerCpu: '1000'
           containerMemory: '1024'
           AWS_ACCESS_KEY_ID: test
@@ -504,191 +323,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up K8s test resources
-        run: |
-          kubectl delete jobs --all --ignore-not-found=true -n default || true
-          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
-            kubectl delete "$pod" --ignore-not-found=true || true
-          done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
-          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
-            kubectl delete "$pvc" --ignore-not-found=true || true
-          done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
-          for i in {1..30}; do
-            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
-            if [ "$PVC_COUNT" -eq 0 ]; then
-              echo "All PVCs deleted"
-              break
-            fi
-            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
-            sleep 1
-          done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
-          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
-            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
-              kubectl delete pv "$pv" --ignore-not-found=true || true
-            fi
-          done || true
-          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
-            kubectl delete "$secret" --ignore-not-found=true || true
-          done || true
-          sleep 3
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          # Clean up disk space on k3d node
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          # Wait for disk pressure to clear
-          for i in {1..15}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up... ($i/15)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                " || true
-              done
-              docker system prune -af --volumes || true
-              sleep 2
-            else
-              break
-            fi
-          done
-      - name: Ensure disk pressure cleared before test
-        timeout-minutes: 3
-        run: |
-          echo "Ensuring disk pressure is cleared before test..."
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          # Wait for disk pressure taints to clear (with aggressive cleanup)
-          # Limit to 10 attempts to avoid timeout - if cleanup doesn't work, just remove the taint
-          PREVIOUS_DISK_USAGE=100
-          for i in {1..10}; do
-            HAS_DISK_PRESSURE=$(kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure" && echo "true" || echo "false")
-            if [ "$HAS_DISK_PRESSURE" = "true" ]; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/10)"
-              # Check actual disk usage on the node
-              PRIMARY_NODE=$(echo "$K3D_NODE_CONTAINERS" | awk '{print $1}')
-              DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
-              echo "Current disk usage on k3d node: ${DISK_USAGE}%"
-              
-              # Use k3s/containerd commands instead of docker (docker not available in k3d nodes)
-              # Clean up k3s containerd snapshots and images
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                " || true
-              done
-              # Clean up old containerd snapshots
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "find /var/lib/rancher/k3s/agent/containerd -type d -name 'snapshots' -exec rm -rf {}/* 2>/dev/null \; || true" || true
-              done
-              # Clean up k3s logs and temp files
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  find /var/lib/rancher/k3s -type f -name '*.log' -delete 2>/dev/null || true
-                  find /tmp -type f -mtime +0 -delete 2>/dev/null || true
-                  find /var/log -type f -name '*.log' -mtime +0 -delete 2>/dev/null || true
-                " || true
-              done
-              # Clean up host docker
-              docker system prune -af --volumes || true
-              
-              # Check if disk usage improved
-              NEW_DISK_USAGE=$(docker exec "$PRIMARY_NODE" sh -c "df -h / 2>/dev/null | tail -1 | awk '{print \$5}' | sed 's/%//'" || echo "unknown")
-              if [ "$NEW_DISK_USAGE" != "unknown" ] && [ "$PREVIOUS_DISK_USAGE" != "unknown" ]; then
-                if [ "$NEW_DISK_USAGE" -ge "$PREVIOUS_DISK_USAGE" ] && [ "$i" -ge 3 ]; then
-                  echo "Disk usage not improving (${PREVIOUS_DISK_USAGE}% -> ${NEW_DISK_USAGE}%), breaking cleanup loop and removing taint manually"
-                  break
-                fi
-                PREVIOUS_DISK_USAGE=$NEW_DISK_USAGE
-              fi
-              sleep 3
-            else
-              echo "No disk pressure taints found, proceeding with test"
-              kubectl describe nodes | grep -i taint || echo "No taints found"
-              break
-            fi
-          done
-          # If disk pressure taint is still present after cleanup, manually remove it (CI only)
-          # Try multiple times as Kubernetes may re-add it if condition persists
-          if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-            echo "WARNING: Disk pressure taint still present after cleanup. Manually removing taint for CI..."
-            NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
-            for node in $NODE_NAMES; do
-              # Try removing with NoSchedule effect (most common)
-              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
-              # Also try without effect specifier
-              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
-              # Use patch as fallback
-              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
-            done
-            sleep 2
-            echo "Taint removal attempted. Checking nodes..."
-            kubectl describe nodes | grep -i taint || echo "No taints found"
-          fi
-          # Wait for disk pressure condition to clear (not just taint)
-          echo "Waiting for disk pressure condition to clear on nodes..."
-          for i in {1..20}; do
-            HAS_DISK_PRESSURE_CONDITION=$(kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"' && echo "true" || echo "false")
-            if [ "$HAS_DISK_PRESSURE_CONDITION" = "true" ]; then
-              echo "Disk pressure condition still present, waiting... ($i/20)"
-              sleep 2
-            else
-              echo "Disk pressure condition cleared, proceeding with test"
-              break
-            fi
-          done
-          # Final check - if condition still exists, remove taint and wait a bit more
-          if kubectl get nodes -o json 2>/dev/null | grep -q '"type":"DiskPressure"'; then
-            echo "WARNING: Disk pressure condition still exists. Removing taint and waiting 10 seconds..."
-            NODE_NAMES=$(kubectl get nodes -o name 2>/dev/null | sed 's/node\///' || echo "")
-            for node in $NODE_NAMES; do
-              # Try removing with NoSchedule effect (most common)
-              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure:NoSchedule- 2>/dev/null || true
-              # Also try without effect specifier
-              kubectl taint nodes "$node" node.kubernetes.io/disk-pressure- 2>/dev/null || true
-              # Use patch as fallback to remove all taints
-              kubectl patch node "$node" -p '{"spec":{"taints":[]}}' 2>/dev/null || true
-            done
-            sleep 10
-            # Verify taint is actually removed
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "ERROR: Taint still present after removal attempts. This may cause pod scheduling issues."
-            else
-              echo "Taint successfully removed."
-            fi
-          fi
-      - name: Run cloud-runner-s3-steps test (validate S3 operations with K8s)
+      - name: Run cloud-runner-s3-steps test (K8s)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
         env:
@@ -696,12 +331,12 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
+          TARGET_PLATFORM: StandaloneLinux64
           cloudRunnerTests: true
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
-          AWS_STACK_NAME: game-ci-team-pipelines
+          KUBE_VOLUME_SIZE: 2Gi
           containerCpu: '1000'
           containerMemory: '1024'
           AWS_ACCESS_KEY_ID: test
@@ -714,100 +349,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up K8s test resources
-        run: |
-          kubectl delete jobs --all --ignore-not-found=true -n default || true
-          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
-            kubectl delete "$pod" --ignore-not-found=true || true
-          done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
-          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
-            kubectl delete "$pvc" --ignore-not-found=true || true
-          done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
-          for i in {1..30}; do
-            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
-            if [ "$PVC_COUNT" -eq 0 ]; then
-              echo "All PVCs deleted"
-              break
-            fi
-            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
-            sleep 1
-          done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
-          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
-            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
-              kubectl delete pv "$pv" --ignore-not-found=true || true
-            fi
-          done || true
-          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
-            kubectl delete "$secret" --ignore-not-found=true || true
-          done || true
-          sleep 3
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          # Clean up disk space on k3d node
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-          done
-          # Wait for disk pressure to clear
-          for i in {1..15}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up... ($i/15)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              done
-              docker system prune -af --volumes || true
-              sleep 2
-            else
-              break
-            fi
-          done
-      - name: Ensure disk pressure cleared before test
-        timeout-minutes: 2
-        run: |
-          echo "Ensuring disk pressure is cleared before test..."
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          for i in {1..30}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                " || true
-              done
-              docker system prune -af --volumes || true
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
-              done
-              sleep 3
-            else
-              echo "No disk pressure taints found, proceeding with test"
-              break
-            fi
-          done
-      - name: Run cloud-runner-end2end-caching test
+      - name: Run cloud-runner-end2end-caching test (K8s)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
         env:
@@ -815,13 +357,12 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
+          TARGET_PLATFORM: StandaloneLinux64
           cloudRunnerTests: true
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: k8s
           KUBE_VOLUME_SIZE: 2Gi
-          # Set resource requests for tests - increased memory to prevent OOM kills
           containerCpu: '1000'
           containerMemory: '1024'
           AWS_ACCESS_KEY_ID: test
@@ -834,100 +375,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up K8s test resources
-        run: |
-          kubectl delete jobs --all --ignore-not-found=true -n default || true
-          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
-            kubectl delete "$pod" --ignore-not-found=true || true
-          done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
-          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
-            kubectl delete "$pvc" --ignore-not-found=true || true
-          done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
-          for i in {1..30}; do
-            PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
-            if [ "$PVC_COUNT" -eq 0 ]; then
-              echo "All PVCs deleted"
-              break
-            fi
-            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
-            sleep 1
-          done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
-          kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
-            if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
-              kubectl delete pv "$pv" --ignore-not-found=true || true
-            fi
-          done || true
-          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
-            kubectl delete "$secret" --ignore-not-found=true || true
-          done || true
-          sleep 3
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          # Clean up disk space on k3d node
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-          done
-          # Wait for disk pressure to clear
-          for i in {1..15}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up... ($i/15)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              done
-              docker system prune -af --volumes || true
-              sleep 2
-            else
-              break
-            fi
-          done
-      - name: Ensure disk pressure cleared before test
-        timeout-minutes: 2
-        run: |
-          echo "Ensuring disk pressure is cleared before test..."
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -af --volumes || true
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
-          for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmi --prune 2>/dev/null || true
-              crictl rmp --all 2>/dev/null || true
-              crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-              find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-            " || true
-          done
-          for i in {1..30}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up aggressively... ($i/30)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "
-                  crictl rmi --prune 2>/dev/null || true
-                  crictl rmp --all 2>/dev/null || true
-                  crictl images -q | xargs -r crictl rmi 2>/dev/null || true
-                  find /var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                  find /var/lib/rancher/k3s/storage -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-                " || true
-              done
-              docker system prune -af --volumes || true
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
-              done
-              sleep 3
-            else
-              echo "No disk pressure taints found, proceeding with test"
-              break
-            fi
-          done
-      - name: Run cloud-runner-end2end-retaining test
+      - name: Run cloud-runner-end2end-retaining test (K8s)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
         env:
@@ -953,119 +401,61 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up K8s test resources
+      - name: Clean up K8s resources and disk space
         run: |
+          echo "Cleaning up K8s resources after K8s tests..."
           kubectl delete jobs --all --ignore-not-found=true -n default || true
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
-          # Only delete PVCs that match our naming pattern (unity-builder-pvc-*)
-          # Wait for PVC deletion to complete to ensure underlying PVs are released
           kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
             kubectl delete "$pvc" --ignore-not-found=true || true
           done || true
-          # Wait for PVCs to be fully deleted (up to 30 seconds)
-          echo "Waiting for PVCs to be deleted..."
           for i in {1..30}; do
             PVC_COUNT=$(kubectl get pvc -n default 2>/dev/null | grep "unity-builder-pvc-" | wc -l || echo "0")
             if [ "$PVC_COUNT" -eq 0 ]; then
               echo "All PVCs deleted"
               break
             fi
-            echo "Waiting for PVCs to be deleted... ($i/30) - Found $PVC_COUNT PVCs"
             sleep 1
           done
-          # Clean up PersistentVolumes that are in Released state (orphaned from deleted PVCs)
-          # This is important for local-path storage in k3d where PVs might not auto-delete
-          echo "Cleaning up orphaned PersistentVolumes..."
           kubectl get pv 2>/dev/null | grep -E "(Released|Failed)" | awk '{print $1}' | while read pv; do
             if [ -n "$pv" ] && [ "$pv" != "NAME" ]; then
-              echo "Deleting orphaned PV: $pv"
               kubectl delete pv "$pv" --ignore-not-found=true || true
             fi
           done || true
           kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
             kubectl delete "$secret" --ignore-not-found=true || true
           done || true
-          sleep 3
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          # Clean up disk space on k3d node
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
             docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
           done
-          # Wait for disk pressure to clear
-          for i in {1..15}; do
-            if kubectl describe nodes 2>/dev/null | grep -q "node.kubernetes.io/disk-pressure"; then
-              echo "Disk pressure detected, cleaning up... ($i/15)"
-              for NODE in $K3D_NODE_CONTAINERS; do
-                docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
-              done
-              docker system prune -af --volumes || true
-              sleep 2
-            else
-              break
-            fi
-          done
-  localstack:
-    name: Cloud Runner Tests (LocalStack)
-    runs-on: ubuntu-latest
-    services:
-      localstack:
-        image: localstack/localstack
-        ports:
-          - 4566:4566
-        env:
-          SERVICES: cloudformation,ecs,kinesis,cloudwatch,s3,logs
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'yarn'
-      - name: Clean up disk space before tests
+          echo "Disk usage after K8s cleanup:"
+          df -h
+      - name: Delete k3d cluster
         run: |
-          # Clean up any leftover cache files from previous runs
+          echo "Deleting k3d cluster to free disk space..."
+          k3d cluster delete unity-builder || true
+          k3d image delete --all || true
+          docker system prune -af --volumes || true
+          echo "Disk usage after k3d deletion:"
+          df -h
+
+      # ==========================================
+      # AWS/LOCALSTACK PROVIDER TESTS SECTION
+      # ==========================================
+      - name: Clean up disk space before AWS/LocalStack provider tests
+        run: |
+          echo "Cleaning up disk space before AWS/LocalStack provider tests..."
           rm -rf ./cloud-runner-cache/* || true
-          # Clean up system caches and temporary files
           sudo apt-get clean || true
-          docker system prune -f || true
-          # Show available disk space
+          docker system prune -af --volumes || true
+          echo "Disk usage:"
           df -h
-      - run: yarn install --frozen-lockfile
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-end2end-locking test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-end2end-locking" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: aws
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT_URL: http://localhost:4566
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-image test (validate image creation)
+      - name: Run cloud-runner-image test (AWS provider)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1082,11 +472,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
-          AWS_S3_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space
@@ -1094,7 +479,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-environment test (validate environment variables)
+      - name: Run cloud-runner-environment test
         timeout-minutes: 30
         run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1111,11 +496,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
-          AWS_S3_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space
@@ -1123,7 +503,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-s3-steps test (validate S3 operations)
+      - name: Run cloud-runner-s3-steps test (AWS provider)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1136,16 +516,10 @@ jobs:
           versioning: None
           KUBE_STORAGE_CLASS: local-path
           PROVIDER_STRATEGY: aws
-          AWS_STACK_NAME: game-ci-team-pipelines
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
-          AWS_S3_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space
@@ -1153,7 +527,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-hooks test (validate hooks functionality)
+      - name: Run cloud-runner-hooks test (AWS provider)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1170,11 +544,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
-          AWS_S3_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space
@@ -1182,7 +551,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-end2end-caching test
+      - name: Run cloud-runner-end2end-caching test (AWS provider)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1199,11 +568,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT_URL: http://localhost:4566
-          AWS_S3_ENDPOINT: http://localhost:4566
-          INPUT_AWSS3ENDPOINT: http://localhost:4566
-          INPUT_AWSENDPOINT: http://localhost:4566
-          AWS_S3_FORCE_PATH_STYLE: 'true'
-          AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
       - name: Clean up disk space
@@ -1211,7 +575,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-end2end-retaining test
+      - name: Run cloud-runner-end2end-retaining test (AWS provider)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1235,7 +599,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-caching test
+      - name: Run cloud-runner-caching test (AWS provider)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-caching" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1259,103 +623,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-environment test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: aws
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT_URL: http://localhost:4566
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-image test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: aws
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT_URL: http://localhost:4566
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-hooks test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: aws
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT_URL: http://localhost:4566
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-local-persistence test
-        timeout-minutes: 60
-        run: yarn run test "cloud-runner-local-persistence" --detectOpenHandles --forceExit --runInBand
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
-          cloudRunnerTests: true
-          versioning: None
-          KUBE_STORAGE_CLASS: local-path
-          PROVIDER_STRATEGY: aws
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4566
-          AWS_ENDPOINT_URL: http://localhost:4566
-          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      - name: Clean up disk space
-        run: |
-          rm -rf ./cloud-runner-cache/* || true
-          docker system prune -f || true
-          df -h
-      - name: Run cloud-runner-locking-core test
+      - name: Run cloud-runner-locking-core test (AWS provider)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-locking-core" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1379,7 +647,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-locking-get-locked test
+      - name: Run cloud-runner-locking-get-locked test (AWS provider)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-locking-get-locked" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1398,47 +666,50 @@ jobs:
           AWS_ENDPOINT_URL: http://localhost:4566
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-  localDocker:
-    name: Cloud Runner Tests (Local Docker with LocalStack S3)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'yarn'
-      - name: Clean up disk space before tests
-        run: |
-          # Clean up any leftover cache files from previous runs
-          rm -rf ./cloud-runner-cache/* || true
-          # Clean up system caches and temporary files
-          sudo apt-get clean || true
-          docker system prune -f || true
-          # Show available disk space
-          df -h
-      - name: Start LocalStack (S3)
-        uses: localstack/setup-localstack@v0.2.4
-        with:
-          install-awslocal: true
-      - name: Verify LocalStack is running
-        run: |
-          echo "Checking LocalStack status..."
-          curl -s http://localhost:4566/_localstack/health | head -10 || echo "LocalStack health check failed"
-          # Check if LocalStack container is running
-          docker ps | grep localstack || echo "No LocalStack container found"
-      - name: Create S3 bucket for tests
-        run: |
-          awslocal s3 mb s3://$AWS_STACK_NAME || true
-          awslocal s3 ls
-      - run: yarn install --frozen-lockfile
       - name: Clean up disk space
         run: |
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-image test
+      - name: Run cloud-runner-end2end-locking test (AWS provider)
+        timeout-minutes: 60
+        run: yarn run test "cloud-runner-end2end-locking" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space after AWS/LocalStack provider tests
+        run: |
+          echo "Cleaning up disk space after AWS/LocalStack provider tests..."
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -af --volumes || true
+          echo "Disk usage:"
+          df -h
+
+      # ==========================================
+      # LOCAL DOCKER TESTS SECTION
+      # ==========================================
+      - name: Clean up disk space before local-docker tests
+        run: |
+          echo "Cleaning up disk space before local-docker tests..."
+          rm -rf ./cloud-runner-cache/* || true
+          sudo apt-get clean || true
+          docker system prune -af --volumes || true
+          echo "Disk usage:"
+          df -h
+      - name: Run cloud-runner-image test (local-docker)
         timeout-minutes: 10
         run: yarn run test "cloud-runner-image" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1457,7 +728,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-hooks test
+      - name: Run cloud-runner-hooks test (local-docker)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-hooks" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1495,7 +766,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-locking-core test
+      - name: Run cloud-runner-locking-core test (local-docker with S3)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-locking-core" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1524,7 +795,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-locking-get-locked test
+      - name: Run cloud-runner-locking-get-locked test (local-docker with S3)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-locking-get-locked" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1553,7 +824,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-caching test
+      - name: Run cloud-runner-caching test (local-docker)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-caching" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1572,7 +843,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-github-checks test
+      - name: Run cloud-runner-github-checks test (local-docker)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-github-checks" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1591,7 +862,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-s3-steps test (LocalStack S3 with local-docker)
+      - name: Run cloud-runner-s3-steps test (local-docker with S3)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1599,15 +870,16 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
+          TARGET_PLATFORM: StandaloneLinux64
           cloudRunnerTests: true
           versioning: None
           PROVIDER_STRATEGY: local-docker
           AWS_STACK_NAME: game-ci-team-pipelines
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
-          AWS_S3_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
           INPUT_AWSS3ENDPOINT: http://localhost:4566
           INPUT_AWSENDPOINT: http://localhost:4566
           AWS_S3_FORCE_PATH_STYLE: 'true'
@@ -1619,7 +891,7 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      - name: Run cloud-runner-end2end-caching test (LocalStack S3 with local-docker)
+      - name: Run cloud-runner-end2end-caching test (local-docker with S3)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
         env:
@@ -1627,60 +899,28 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           PROJECT_PATH: test-project
-          TARGET_PLATFORM: StandaloneWindows64
+          TARGET_PLATFORM: StandaloneLinux64
           cloudRunnerTests: true
           versioning: None
           PROVIDER_STRATEGY: local-docker
           AWS_STACK_NAME: game-ci-team-pipelines
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
-          AWS_S3_ENDPOINT: http://localhost:4566
           AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_S3_ENDPOINT: http://localhost:4566
           INPUT_AWSS3ENDPOINT: http://localhost:4566
           INPUT_AWSENDPOINT: http://localhost:4566
           AWS_S3_FORCE_PATH_STYLE: 'true'
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-  # Commented out: Using LocalStack tests instead of real AWS
-  # aws:
-  #   name: Cloud Runner Tests (AWS)
-  #   runs-on: ubuntu-latest
-  #   needs: [k8s, localstack]
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       test:
-  #         - 'cloud-runner-end2end-caching'
-  #         - 'cloud-runner-end2end-retaining'
-  #         - 'cloud-runner-hooks'
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         lfs: false
-  #     - name: Configure AWS Credentials
-  #       uses: aws-actions/configure-aws-credentials@v1
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ${{ env.AWS_REGION }}
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         cache: 'yarn'
-  #     - run: yarn install --frozen-lockfile
-  #     - run: yarn run test "${{ matrix.test }}" --detectOpenHandles --forceExit --runInBand
-  #       timeout-minutes: 60
-  #       env:
-  #         UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-  #         UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-  #         UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-  #         PROJECT_PATH: test-project
-  #         TARGET_PLATFORM: StandaloneWindows64
-  #         cloudRunnerTests: true
-  #         versioning: None
-  #         PROVIDER_STRATEGY: aws
-  #         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-  #         GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Final disk space cleanup
+        run: |
+          echo "Final disk space cleanup..."
+          rm -rf ./cloud-runner-cache/* || true
+          docker stop localstack-main 2>/dev/null || true
+          docker rm localstack-main 2>/dev/null || true
+          docker system prune -af --volumes || true
+          echo "Final disk usage:"
+          df -h

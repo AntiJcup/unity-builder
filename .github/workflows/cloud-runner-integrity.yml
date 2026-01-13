@@ -70,14 +70,13 @@ jobs:
         run: |
           echo "Starting LocalStack as managed Docker container..."
           # Start LocalStack with specific name and resource limits
+          # Note: Using default DATA_DIR to avoid tmpfs mount conflicts
           docker run -d \
             --name localstack-main \
             --network bridge \
             -p 4566:4566 \
             -e SERVICES=s3,cloudformation,ecs,kinesis,cloudwatch,logs \
             -e DEBUG=0 \
-            -e DATA_DIR=/tmp/localstack/data \
-            --tmpfs /tmp/localstack/data:rw,noexec,nosuid,size=100m \
             localstack/localstack:latest || true
           # Wait for LocalStack to be ready - check both health endpoint and S3 service
           echo "Waiting for LocalStack to be ready..."

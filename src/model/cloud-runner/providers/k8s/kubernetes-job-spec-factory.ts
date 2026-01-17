@@ -90,10 +90,28 @@ class KubernetesJobSpecFactory {
 
               workingDir: `${workingDirectory}`,
               resources: {
-                requests: {
-                  memory: `${Number.parseInt(buildParameters.containerMemory) / 1024}G` || '750M',
-                  cpu: Number.parseInt(buildParameters.containerCpu) / 1024 || '1',
-                },
+                requests: (() => {
+                  // Use smaller resource requests for lightweight hook containers
+                  // Hook containers typically use utility images like aws-cli, rclone, etc.
+                  const lightweightImages = ['amazon/aws-cli', 'rclone/rclone', 'steamcmd/steamcmd', 'ubuntu'];
+                  const isLightweightContainer = lightweightImages.some((lightImage) => image.includes(lightImage));
+                  
+                  if (isLightweightContainer && process.env['cloudRunnerTests'] === 'true') {
+                    // For test environments, use minimal resources for hook containers
+                    return {
+                      memory: '128Mi',
+                      cpu: '100m', // 0.1 CPU
+                    };
+                  }
+                  
+                  // For main build containers, use the configured resources
+                  const memoryMB = Number.parseInt(buildParameters.containerMemory);
+                  const cpuMB = Number.parseInt(buildParameters.containerCpu);
+                  return {
+                    memory: !isNaN(memoryMB) && memoryMB > 0 ? `${memoryMB / 1024}G` : '750M',
+                    cpu: !isNaN(cpuMB) && cpuMB > 0 ? `${cpuMB / 1024}` : '1',
+                  };
+                })(),
               },
               env: [
                 ...adjustedEnvironment.map((x) => {

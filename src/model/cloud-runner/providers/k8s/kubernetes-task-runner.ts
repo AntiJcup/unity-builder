@@ -544,10 +544,41 @@ class KubernetesTaskRunner {
                 const events = await kubeClient.listNamespacedEvent(namespace);
                 const podEvents = events.body.items
                   .filter((x) => x.involvedObject?.name === podName)
-                  .slice(-5)
+                  .slice(-10)
                   .map((x) => `${x.type}: ${x.reason} - ${x.message}`);
                 if (podEvents.length > 0) {
                   message += `\n\nRecent Events:\n${podEvents.join('\n')}`;
+                }
+                
+                // Get pod details to check for scheduling issues
+                try {
+                  const podStatus = await kubeClient.readNamespacedPodStatus(podName, namespace);
+                  const podSpec = podStatus.body.spec;
+                  const podStatusDetails = podStatus.body.status;
+                  
+                  // Check container resource requests
+                  if (podSpec?.containers?.[0]?.resources?.requests) {
+                    const requests = podSpec.containers[0].resources.requests;
+                    message += `\n\nContainer Resource Requests:\n  CPU: ${requests.cpu || 'not set'}\n  Memory: ${requests.memory || 'not set'}\n  Ephemeral Storage: ${requests['ephemeral-storage'] || 'not set'}`;
+                  }
+                  
+                  // Check node selector and tolerations
+                  if (podSpec?.nodeSelector && Object.keys(podSpec.nodeSelector).length > 0) {
+                    message += `\n\nNode Selector: ${JSON.stringify(podSpec.nodeSelector)}`;
+                  }
+                  if (podSpec?.tolerations && podSpec.tolerations.length > 0) {
+                    message += `\n\nTolerations: ${JSON.stringify(podSpec.tolerations)}`;
+                  }
+                  
+                  // Check pod conditions for scheduling issues
+                  if (podStatusDetails?.conditions) {
+                    const unschedulable = podStatusDetails.conditions.find((c: any) => c.type === 'PodScheduled' && c.status === 'False');
+                    if (unschedulable) {
+                      message += `\n\nScheduling Issue: ${unschedulable.reason || 'Unknown'} - ${unschedulable.message || 'No message'}`;
+                    }
+                  }
+                } catch (podStatusError) {
+                  // Ignore pod status fetch errors
                 }
               } catch {
                 // Ignore event fetch errors

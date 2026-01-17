@@ -167,19 +167,15 @@ class Kubernetes implements ProviderInterface {
           const imageName = image.split(':')[0];
           const imageTag = image.split(':')[1] || 'latest';
 
-          // More targeted cleanup: remove stopped containers and non-Unity images
-          // IMPORTANT: Preserve Unity images to avoid re-pulling the 3.9GB image
-          // Strategy: Only remove containers, don't prune images (which might remove Unity image)
+          // More targeted cleanup: remove stopped containers only
+          // IMPORTANT: Do NOT remove images - preserve Unity image to avoid re-pulling the 3.9GB image
+          // Strategy: Only remove containers, never touch images (safest approach)
           const cleanupCommands = [
             // Remove all stopped containers (this frees runtime space but keeps images)
             'docker exec k3d-unity-builder-agent-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
             'docker exec k3d-unity-builder-server-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
-            // Remove specific non-Unity images by name (safer than filtering)
-            // Only remove known system images, preserve everything else including Unity
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images --format \\"{{.Repository}}:{{.Tag}}\\" 2>/dev/null | grep -vE \\"unityci/editor|unity\\" | grep -E \\"rancher/|curlimages/|amazon/aws-cli|rclone/rclone|steamcmd/steamcmd|ubuntu:|alpine:\\" | xargs -r -I {} crictl rmi {} 2>/dev/null || true" || true',
-            'docker exec k3d-unity-builder-server-0 sh -c "crictl images --format \\"{{.Repository}}:{{.Tag}}\\" 2>/dev/null | grep -vE \\"unityci/editor|unity\\" | grep -E \\"rancher/|curlimages/|amazon/aws-cli|rclone/rclone|steamcmd/steamcmd|ubuntu:|alpine:\\" | xargs -r -I {} crictl rmi {} 2>/dev/null || true" || true',
-            // DO NOT use --prune as it might remove the Unity image if no containers are using it
-            // Only clean up if we have very little space left
+            // DO NOT remove images - preserve everything including Unity image
+            // Removing images risks removing the Unity image which causes "no space left" errors
           ];
 
           for (const cmd of cleanupCommands) {
@@ -191,14 +187,31 @@ class Kubernetes implements ProviderInterface {
             }
           }
 
-          // Verify Unity image is still cached
+          // Verify Unity image is still cached - if not found, log warning but continue
+          // The image might be on the server node instead of agent node
           try {
-            const unityImageCheck = await CloudRunnerSystem.Run(
+            const unityImageCheckAgent = await CloudRunnerSystem.Run(
               `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep unityci/editor || echo 'Unity image not found in agent'" || true`,
               true,
               true,
             );
-            CloudRunnerLogger.log(`Unity image cache status:\n${unityImageCheck}`);
+            const unityImageCheckServer = await CloudRunnerSystem.Run(
+              `docker exec k3d-unity-builder-server-0 sh -c "crictl images | grep unityci/editor || echo 'Unity image not found in server'" || true`,
+              true,
+              true,
+            );
+            CloudRunnerLogger.log(`Unity image cache status - Agent:\n${unityImageCheckAgent}`);
+            CloudRunnerLogger.log(`Unity image cache status - Server:\n${unityImageCheckServer}`);
+            
+            // If image is not found in either node, log a warning
+            if (
+              unityImageCheckAgent.includes('not found') &&
+              unityImageCheckServer.includes('not found')
+            ) {
+              CloudRunnerLogger.logWarning(
+                'Unity image not found in k3d nodes. It will need to be pulled, which may cause disk space issues.',
+              );
+            }
           } catch {
             // Ignore check failures
           }

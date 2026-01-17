@@ -54,21 +54,15 @@ describe('Cloud Runner Retain Workspace', () => {
           CloudRunnerLogger.log('Cleaning up k3d node between builds (preserving Unity image)...');
           const K3D_NODE_CONTAINERS = ['k3d-unity-builder-agent-0', 'k3d-unity-builder-server-0'];
           for (const NODE of K3D_NODE_CONTAINERS) {
-            // Remove stopped containers but keep images
+            // Remove stopped containers only - DO NOT touch images
+            // Removing images risks removing the Unity image which causes "no space left" errors
             await CloudRunnerSystem.Run(
               `docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`,
               true,
               true,
             );
-            // Only remove specific known system images, preserve Unity and everything else
-            // DO NOT use --prune as it might remove Unity image
-            await CloudRunnerSystem.Run(
-              `docker exec ${NODE} sh -c "crictl images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -vE 'unityci/editor|unity' | grep -E 'rancher/|curlimages/|amazon/aws-cli|rclone/rclone|steamcmd/steamcmd|ubuntu:|alpine:' | xargs -r -I {} crictl rmi {} 2>/dev/null || true" || true`,
-              true,
-              true,
-            );
           }
-          CloudRunnerLogger.log('Cleanup between builds completed');
+          CloudRunnerLogger.log('Cleanup between builds completed (containers removed, images preserved)');
         } catch (cleanupError) {
           CloudRunnerLogger.logWarning(`Failed to cleanup between builds: ${cleanupError}`);
           // Continue anyway

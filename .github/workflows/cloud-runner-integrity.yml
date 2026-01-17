@@ -229,12 +229,46 @@ jobs:
           # Pre-pull the Unity image into the k3d cluster before running tests
           # This ensures it's cached in the k3d node's containerd and won't need to be pulled during test execution
           UNITY_IMAGE="unityci/editor:ubuntu-2021.3.45f1-base-3"
+          
+          # Check disk space before pulling
+          echo "Checking disk space before pre-pulling Unity image..."
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            echo "Disk space in $NODE:"
+            docker exec "$NODE" sh -c "df -h /var/lib/rancher/k3s 2>/dev/null || df -h / 2>/dev/null || true" || true
+          done
+          
+          # Clean up before pulling to ensure we have space
+          echo "Cleaning up before pre-pulling image..."
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done || true
+          
           echo "Creating a temporary pod to pull and cache the Unity image..."
           kubectl run image-puller --image="$UNITY_IMAGE" --restart=Never --command -- sleep 1 || true
           echo "Waiting for image pull to complete (this may take several minutes for 3.9GB image)..."
-          timeout 600 kubectl wait --for=condition=Ready pod/image-puller --timeout=600s 2>/dev/null || \
-            timeout 600 kubectl wait --for=condition=PodScheduled pod/image-puller --timeout=600s 2>/dev/null || true
-          sleep 30
+          
+          # Wait for pod to be scheduled and image to be pulled
+          MAX_WAIT=600
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            POD_STATUS=$(kubectl get pod image-puller -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+            if [ "$POD_STATUS" = "Running" ] || [ "$POD_STATUS" = "Succeeded" ]; then
+              echo "Image pull pod is $POD_STATUS"
+              break
+            elif [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Evicted" ]; then
+              echo "Warning: Image pull pod status is $POD_STATUS. Checking events..."
+              kubectl describe pod image-puller 2>/dev/null | tail -20 || true
+              # Try to continue anyway - image might be partially cached
+              break
+            fi
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+            echo "Waiting for image pull... ($ELAPSED/$MAX_WAIT seconds)"
+          done
+          
+          sleep 10
           kubectl delete pod image-puller --ignore-not-found=true || true
           for i in {1..30}; do
             if ! kubectl get pod image-puller 2>/dev/null; then
@@ -244,11 +278,22 @@ jobs:
             sleep 2
           done
           sleep 5
-          docker exec k3d-unity-builder-server-0 sh -c "
-            crictl rmp --all 2>/dev/null || true
-            find /var/lib/rancher/k3s/agent/containerd/io.containerd.runtime.v2.task/default -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
-          " || true
-          echo "Image pre-pull completed. Image is now cached in k3d node."
+          
+          # Clean up the pod runtime but keep the image
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "
+              crictl rmp --all 2>/dev/null || true
+              find /var/lib/rancher/k3s/agent/containerd/io.containerd.runtime.v2.task/default -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
+            " || true
+          done
+          
+          # Verify image is cached
+          echo "Checking if Unity image is cached..."
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl images | grep unityci/editor || echo 'Image not found in $NODE'" || true
+          done
+          
+          echo "Image pre-pull completed. Image should be cached in k3d node."
       - name: Clean up K8s test resources before tests
         run: |
           echo "Cleaning up K8s test resources..."
@@ -374,6 +419,24 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space before end2end-retaining test
+        run: |
+          echo "Cleaning up disk space before end2end-retaining test..."
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          # Aggressive cleanup in k3d nodes
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+            docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
+          done || true
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          echo "Disk usage before end2end-retaining test:"
+          df -h
       - name: Run cloud-runner-end2end-retaining test (K8s)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-retaining" --detectOpenHandles --forceExit --runInBand
@@ -428,9 +491,20 @@ jobs:
           done || true
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0}"
+          # Aggressive cleanup in k3d nodes to free ephemeral storage
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "docker system prune -af --volumes 2>/dev/null || true" || true
+            echo "Cleaning up $NODE..."
+            # Remove all stopped containers
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove all unused images
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+            # Remove all images (more aggressive)
+            docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
+            # Clean up containerd content store
+            docker exec "$NODE" sh -c "crictl images --prune 2>/dev/null || true" || true
+            # Check disk space
+            docker exec "$NODE" sh -c "df -h /var/lib/rancher/k3s 2>/dev/null || df -h / 2>/dev/null || true" || true
           done
           echo "Disk usage after K8s cleanup:"
           df -h

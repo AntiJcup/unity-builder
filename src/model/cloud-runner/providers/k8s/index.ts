@@ -161,17 +161,40 @@ class Kubernetes implements ProviderInterface {
         try {
           CloudRunnerLogger.log('Cleaning up old images in k3d node before pulling new image...');
           const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
-          // Clean up unused images in k3d node using containerd
-          await CloudRunnerSystem.Run(
+          // More aggressive cleanup: remove all stopped containers, unused images, and containerd snapshots
+          const cleanupCommands = [
+            // Remove all stopped containers
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
+            // Remove all unused images (more aggressive)
             'docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true',
-            true,
-            true,
-          );
-          await CloudRunnerSystem.Run(
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images -q | head -n -1 | xargs -r crictl rmi 2>/dev/null || true" || true',
-            true,
-            true,
-          );
+            // Remove all images except the one we might need (if any)
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true',
+            // Clean up containerd snapshots and layers
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune --all 2>/dev/null || true" || true',
+            // Clean up containerd content store (removes unused layers)
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images --prune 2>/dev/null || true" || true',
+          ];
+          
+          for (const cmd of cleanupCommands) {
+            try {
+              await CloudRunnerSystem.Run(cmd, true, true);
+            } catch (cmdError) {
+              // Ignore individual command failures
+              CloudRunnerLogger.log(`Cleanup command failed (non-fatal): ${cmdError}`);
+            }
+          }
+          
+          // Check disk space after cleanup
+          try {
+            const diskCheck = await CloudRunnerSystem.Run(
+              'docker exec k3d-unity-builder-agent-0 sh -c "df -h /var/lib/rancher/k3s 2>/dev/null || df -h / 2>/dev/null || true" || true',
+              true,
+              true,
+            );
+            CloudRunnerLogger.log(`Disk space in k3d node after cleanup:\n${diskCheck}`);
+          } catch {
+            // Ignore disk check failures
+          }
         } catch (cleanupError) {
           CloudRunnerLogger.logWarning(`Failed to cleanup images before job creation: ${cleanupError}`);
           // Continue anyway - image might already be cached

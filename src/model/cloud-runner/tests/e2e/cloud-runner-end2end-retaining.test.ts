@@ -60,15 +60,10 @@ describe('Cloud Runner Retain Workspace', () => {
               true,
               true,
             );
-            // Remove non-Unity images only (preserve unityci/editor images)
+            // Only remove specific known system images, preserve Unity and everything else
+            // DO NOT use --prune as it might remove Unity image
             await CloudRunnerSystem.Run(
-              `docker exec ${NODE} sh -c "crictl images --format 'table {{.ID}}\\t{{.Repository}}' 2>/dev/null | grep -vE 'unityci/editor|unity|IMAGE' | awk '{print \\$1}' | xargs -r crictl rmi 2>/dev/null || true" || true`,
-              true,
-              true,
-            );
-            // Clean up unused layers
-            await CloudRunnerSystem.Run(
-              `docker exec ${NODE} sh -c "crictl rmi --prune 2>/dev/null || true" || true`,
+              `docker exec ${NODE} sh -c "crictl images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -vE 'unityci/editor|unity' | grep -E 'rancher/|curlimages/|amazon/aws-cli|rclone/rclone|steamcmd/steamcmd|ubuntu:|alpine:' | xargs -r -I {} crictl rmi {} 2>/dev/null || true" || true`,
               true,
               true,
             );

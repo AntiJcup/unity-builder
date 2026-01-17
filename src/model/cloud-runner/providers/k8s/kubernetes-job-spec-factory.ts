@@ -95,7 +95,7 @@ class KubernetesJobSpecFactory {
                   // Hook containers typically use utility images like aws-cli, rclone, etc.
                   const lightweightImages = ['amazon/aws-cli', 'rclone/rclone', 'steamcmd/steamcmd', 'ubuntu'];
                   const isLightweightContainer = lightweightImages.some((lightImage) => image.includes(lightImage));
-                  
+
                   if (isLightweightContainer && process.env['cloudRunnerTests'] === 'true') {
                     // For test environments, use minimal resources for hook containers
                     return {
@@ -103,7 +103,7 @@ class KubernetesJobSpecFactory {
                       cpu: '100m', // 0.1 CPU
                     };
                   }
-                  
+
                   // For main build containers, use the configured resources
                   const memoryMB = Number.parseInt(buildParameters.containerMemory);
                   const cpuMB = Number.parseInt(buildParameters.containerCpu);

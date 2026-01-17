@@ -148,15 +148,17 @@ class KubernetesPods {
       }
 
       // Check if pod was evicted due to disk pressure - this is an infrastructure issue
-      const wasEvicted = errorDetails.some((detail) =>
-        detail.toLowerCase().includes('evicted') || detail.toLowerCase().includes('diskpressure'),
+      const wasEvicted = errorDetails.some(
+        (detail) => detail.toLowerCase().includes('evicted') || detail.toLowerCase().includes('diskpressure'),
       );
       if (wasEvicted) {
         const evictionMessage = `Pod ${podName} was evicted due to disk pressure. This is a test infrastructure issue - the cluster doesn't have enough disk space.`;
         CloudRunnerLogger.logWarning(evictionMessage);
         CloudRunnerLogger.log(`Pod details: ${errorDetails.join('\n')}`);
         throw new Error(
-          `${evictionMessage}\nThis indicates the test environment needs more disk space or better cleanup.\n${errorDetails.join('\n')}`,
+          `${evictionMessage}\nThis indicates the test environment needs more disk space or better cleanup.\n${errorDetails.join(
+            '\n',
+          )}`,
         );
       }
 

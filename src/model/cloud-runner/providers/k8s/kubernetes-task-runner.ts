@@ -500,7 +500,7 @@ class KubernetesTaskRunner {
                 waitComplete = false;
                 return true; // Exit wait loop to throw error
               }
-              
+
               // Check if pod is actively pulling an image - if so, allow more time
               const isPullingImage = podEvents.some(
                 (x) => x.reason === 'Pulling' || x.reason === 'Pulled' || x.message?.includes('Pulling image'),
@@ -508,18 +508,20 @@ class KubernetesTaskRunner {
               const hasImagePullError = podEvents.some(
                 (x) => x.reason === 'Failed' && (x.message?.includes('pull') || x.message?.includes('image')),
               );
-              
+
               if (hasImagePullError) {
                 message = `Pod ${podName} failed to pull image. Check image availability and credentials.`;
                 CloudRunnerLogger.logWarning(message);
                 waitComplete = false;
                 return true; // Exit wait loop to throw error
               }
-              
+
               // If actively pulling image, reset pending count to allow more time
               // Large images (like Unity 3.9GB) can take 3-5 minutes to pull
               if (isPullingImage && consecutivePendingCount > 4) {
-                CloudRunnerLogger.log(`Pod ${podName} is pulling image (check ${consecutivePendingCount}). This may take several minutes for large images.`);
+                CloudRunnerLogger.log(
+                  `Pod ${podName} is pulling image (check ${consecutivePendingCount}). This may take several minutes for large images.`,
+                );
                 // Don't increment consecutivePendingCount if we're actively pulling
                 consecutivePendingCount = Math.max(4, consecutivePendingCount - 1);
               }
@@ -530,10 +532,11 @@ class KubernetesTaskRunner {
             // For tests, allow more time if image is being pulled (large images need 5+ minutes)
             // Otherwise fail faster if stuck in Pending (2 minutes = 8 checks at 15s interval)
             const isTest = process.env['cloudRunnerTests'] === 'true';
-            const isPullingImage = containerStatuses.some(
-              (cs: any) => cs.state?.waiting?.reason === 'ImagePull' || cs.state?.waiting?.reason === 'ErrImagePull',
-            ) || conditions.some((c: any) => c.reason?.includes('Pulling'));
-            
+            const isPullingImage =
+              containerStatuses.some(
+                (cs: any) => cs.state?.waiting?.reason === 'ImagePull' || cs.state?.waiting?.reason === 'ErrImagePull',
+              ) || conditions.some((c: any) => c.reason?.includes('Pulling'));
+
             // Allow up to 20 minutes for image pulls in tests (80 checks), 2 minutes otherwise
             const maxPendingChecks = isTest && isPullingImage ? 80 : isTest ? 8 : 80;
 
@@ -549,19 +552,21 @@ class KubernetesTaskRunner {
                 if (podEvents.length > 0) {
                   message += `\n\nRecent Events:\n${podEvents.join('\n')}`;
                 }
-                
+
                 // Get pod details to check for scheduling issues
                 try {
                   const podStatus = await kubeClient.readNamespacedPodStatus(podName, namespace);
                   const podSpec = podStatus.body.spec;
                   const podStatusDetails = podStatus.body.status;
-                  
+
                   // Check container resource requests
                   if (podSpec?.containers?.[0]?.resources?.requests) {
                     const requests = podSpec.containers[0].resources.requests;
-                    message += `\n\nContainer Resource Requests:\n  CPU: ${requests.cpu || 'not set'}\n  Memory: ${requests.memory || 'not set'}\n  Ephemeral Storage: ${requests['ephemeral-storage'] || 'not set'}`;
+                    message += `\n\nContainer Resource Requests:\n  CPU: ${requests.cpu || 'not set'}\n  Memory: ${
+                      requests.memory || 'not set'
+                    }\n  Ephemeral Storage: ${requests['ephemeral-storage'] || 'not set'}`;
                   }
-                  
+
                   // Check node selector and tolerations
                   if (podSpec?.nodeSelector && Object.keys(podSpec.nodeSelector).length > 0) {
                     message += `\n\nNode Selector: ${JSON.stringify(podSpec.nodeSelector)}`;
@@ -569,12 +574,16 @@ class KubernetesTaskRunner {
                   if (podSpec?.tolerations && podSpec.tolerations.length > 0) {
                     message += `\n\nTolerations: ${JSON.stringify(podSpec.tolerations)}`;
                   }
-                  
+
                   // Check pod conditions for scheduling issues
                   if (podStatusDetails?.conditions) {
-                    const unschedulable = podStatusDetails.conditions.find((c: any) => c.type === 'PodScheduled' && c.status === 'False');
+                    const unschedulable = podStatusDetails.conditions.find(
+                      (c: any) => c.type === 'PodScheduled' && c.status === 'False',
+                    );
                     if (unschedulable) {
-                      message += `\n\nScheduling Issue: ${unschedulable.reason || 'Unknown'} - ${unschedulable.message || 'No message'}`;
+                      message += `\n\nScheduling Issue: ${unschedulable.reason || 'Unknown'} - ${
+                        unschedulable.message || 'No message'
+                      }`;
                     }
                   }
                 } catch (podStatusError) {

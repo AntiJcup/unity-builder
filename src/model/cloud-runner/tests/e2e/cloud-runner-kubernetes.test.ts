@@ -55,13 +55,15 @@ describe('Cloud Runner Kubernetes', () => {
 
       // Check if pod was evicted due to resource constraints - this is a test infrastructure failure
       // Evictions indicate the cluster doesn't have enough resources, which is a test environment issue
-      if (results.includes('The node was low on resource: ephemeral-storage') || 
-          results.includes('TerminationByKubelet') ||
-          results.includes('Evicted')) {
+      if (
+        results.includes('The node was low on resource: ephemeral-storage') ||
+        results.includes('TerminationByKubelet') ||
+        results.includes('Evicted')
+      ) {
         throw new Error(
           `Test failed: Pod was evicted due to resource constraints (ephemeral-storage). ` +
-          `This indicates the test environment doesn't have enough disk space. ` +
-          `Results: ${results.substring(0, 500)}`
+            `This indicates the test environment doesn't have enough disk space. ` +
+            `Results: ${results.substring(0, 500)}`,
         );
       }
 

@@ -194,7 +194,9 @@ export class ContainerHookService {
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
       aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/ 2>/dev/null || true
-      aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/ 2>/dev/null || true
+      aws $ENDPOINT_ARGS s3 ls ${
+        CloudRunner.buildParameters.awsStackName
+      }/cloud-runner-cache/$CACHE_KEY/ 2>/dev/null || true
       BUCKET1="${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/Library/"
       OBJECT1=""
       LS_OUTPUT1="$(aws $ENDPOINT_ARGS s3 ls $BUCKET1 2>/dev/null || echo '')"

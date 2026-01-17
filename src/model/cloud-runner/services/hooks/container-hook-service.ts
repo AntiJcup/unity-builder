@@ -193,16 +193,26 @@ export class ContainerHookService {
       fi
       ENDPOINT_ARGS=""
       if [ -n "$AWS_S3_ENDPOINT" ]; then ENDPOINT_ARGS="--endpoint-url $AWS_S3_ENDPOINT"; fi
-      aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/ || true
-      aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/ || true
+      aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/ 2>/dev/null || true
+      aws $ENDPOINT_ARGS s3 ls ${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/ 2>/dev/null || true
       BUCKET1="${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/Library/"
-      aws $ENDPOINT_ARGS s3 ls $BUCKET1 || true
-      OBJECT1="$(aws $ENDPOINT_ARGS s3 ls $BUCKET1 | sort | tail -n 1 | awk '{print $4}' || '')"
-      aws $ENDPOINT_ARGS s3 cp s3://$BUCKET1$OBJECT1 /data/cache/$CACHE_KEY/Library/ || true
+      OBJECT1=""
+      LS_OUTPUT1="$(aws $ENDPOINT_ARGS s3 ls $BUCKET1 2>/dev/null || echo '')"
+      if [ -n "$LS_OUTPUT1" ] && [ "$LS_OUTPUT1" != "" ]; then
+        OBJECT1="$(echo "$LS_OUTPUT1" | sort | tail -n 1 | awk '{print $4}' || '')"
+        if [ -n "$OBJECT1" ] && [ "$OBJECT1" != "" ]; then
+          aws $ENDPOINT_ARGS s3 cp s3://$BUCKET1$OBJECT1 /data/cache/$CACHE_KEY/Library/ 2>/dev/null || true
+        fi
+      fi
       BUCKET2="${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/$CACHE_KEY/lfs/"
-      aws $ENDPOINT_ARGS s3 ls $BUCKET2 || true
-      OBJECT2="$(aws $ENDPOINT_ARGS s3 ls $BUCKET2 | sort | tail -n 1 | awk '{print $4}' || '')"
-      aws $ENDPOINT_ARGS s3 cp s3://$BUCKET2$OBJECT2 /data/cache/$CACHE_KEY/lfs/ || true
+      OBJECT2=""
+      LS_OUTPUT2="$(aws $ENDPOINT_ARGS s3 ls $BUCKET2 2>/dev/null || echo '')"
+      if [ -n "$LS_OUTPUT2" ] && [ "$LS_OUTPUT2" != "" ]; then
+        OBJECT2="$(echo "$LS_OUTPUT2" | sort | tail -n 1 | awk '{print $4}' || '')"
+        if [ -n "$OBJECT2" ] && [ "$OBJECT2" != "" ]; then
+          aws $ENDPOINT_ARGS s3 cp s3://$BUCKET2$OBJECT2 /data/cache/$CACHE_KEY/lfs/ 2>/dev/null || true
+        fi
+      fi
     else
       echo "AWS CLI not available, skipping aws-s3-pull-cache"
     fi

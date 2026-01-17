@@ -426,12 +426,15 @@ jobs:
           kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
             kubectl delete "$pod" --ignore-not-found=true || true
           done || true
-          # Aggressive cleanup in k3d nodes
+          # Aggressive cleanup in k3d nodes, but preserve Unity images
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
+            # Remove stopped containers
             docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers
             docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
           done || true
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
@@ -491,18 +494,16 @@ jobs:
           done || true
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -af --volumes || true
-          # Aggressive cleanup in k3d nodes to free ephemeral storage
+          # Aggressive cleanup in k3d nodes to free ephemeral storage, but preserve Unity images
           K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
           for NODE in $K3D_NODE_CONTAINERS; do
-            echo "Cleaning up $NODE..."
+            echo "Cleaning up $NODE (preserving Unity images)..."
             # Remove all stopped containers
             docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
-            # Remove all unused images
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers (prune should preserve referenced images)
             docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
-            # Remove all images (more aggressive)
-            docker exec "$NODE" sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true
-            # Clean up containerd content store
-            docker exec "$NODE" sh -c "crictl images --prune 2>/dev/null || true" || true
             # Check disk space
             docker exec "$NODE" sh -c "df -h /var/lib/rancher/k3s 2>/dev/null || df -h / 2>/dev/null || true" || true
           done

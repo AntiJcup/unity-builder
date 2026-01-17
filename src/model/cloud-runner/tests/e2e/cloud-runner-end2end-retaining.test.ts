@@ -48,6 +48,38 @@ describe('Cloud Runner Retain Workspace', () => {
 
       CloudRunnerLogger.log(`run 1 succeeded`);
 
+      // Clean up k3d node between builds to free space, but preserve Unity image
+      if (CloudRunnerOptions.providerStrategy === 'k8s') {
+        try {
+          CloudRunnerLogger.log('Cleaning up k3d node between builds (preserving Unity image)...');
+          const K3D_NODE_CONTAINERS = ['k3d-unity-builder-agent-0', 'k3d-unity-builder-server-0'];
+          for (const NODE of K3D_NODE_CONTAINERS) {
+            // Remove stopped containers but keep images
+            await CloudRunnerSystem.Run(
+              `docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`,
+              true,
+              true,
+            );
+            // Remove non-Unity images only (preserve unityci/editor images)
+            await CloudRunnerSystem.Run(
+              `docker exec ${NODE} sh -c "crictl images --format 'table {{.ID}}\\t{{.Repository}}' 2>/dev/null | grep -vE 'unityci/editor|unity|IMAGE' | awk '{print \\$1}' | xargs -r crictl rmi 2>/dev/null || true" || true`,
+              true,
+              true,
+            );
+            // Clean up unused layers
+            await CloudRunnerSystem.Run(
+              `docker exec ${NODE} sh -c "crictl rmi --prune 2>/dev/null || true" || true`,
+              true,
+              true,
+            );
+          }
+          CloudRunnerLogger.log('Cleanup between builds completed');
+        } catch (cleanupError) {
+          CloudRunnerLogger.logWarning(`Failed to cleanup between builds: ${cleanupError}`);
+          // Continue anyway
+        }
+      }
+
       // await CloudRunnerSystem.Run(`tree -d ./cloud-runner-cache/${}`);
       const buildParameter2 = await CreateParameters(overrides);
 

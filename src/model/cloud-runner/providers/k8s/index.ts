@@ -157,22 +157,29 @@ class Kubernetes implements ProviderInterface {
       await KubernetesSecret.createSecret(secrets, this.secretName, this.namespace, this.kubeClient);
       
       // For tests, clean up old images before creating job to free space for image pull
+      // IMPORTANT: Preserve the Unity image to avoid re-pulling it
       if (process.env['cloudRunnerTests'] === 'true') {
         try {
           CloudRunnerLogger.log('Cleaning up old images in k3d node before pulling new image...');
           const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
-          // More aggressive cleanup: remove all stopped containers, unused images, and containerd snapshots
+          
+          // Extract image name without tag for matching
+          const imageName = image.split(':')[0];
+          const imageTag = image.split(':')[1] || 'latest';
+          
+          // More targeted cleanup: remove stopped containers and non-Unity images
+          // IMPORTANT: Preserve Unity images to avoid re-pulling the 3.9GB image
           const cleanupCommands = [
-            // Remove all stopped containers
+            // Remove all stopped containers (this frees runtime space but keeps images)
             'docker exec k3d-unity-builder-agent-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
-            // Remove all unused images (more aggressive)
+            'docker exec k3d-unity-builder-server-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
+            // Remove non-Unity images only (preserve unityci/editor images)
+            // List all images, filter out Unity images, then remove the rest
+            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images --format \\"table {{.ID}}\\t{{.Repository}}\\" 2>/dev/null | grep -vE \\"unityci/editor|unity|IMAGE\\" | awk \\"{print \\$1}\\" | xargs -r crictl rmi 2>/dev/null || true" || true',
+            'docker exec k3d-unity-builder-server-0 sh -c "crictl images --format \\"table {{.ID}}\\t{{.Repository}}\\" 2>/dev/null | grep -vE \\"unityci/editor|unity|IMAGE\\" | awk \\"{print \\$1}\\" | xargs -r crictl rmi 2>/dev/null || true" || true',
+            // Clean up unused layers/snapshots (prune should preserve referenced images)
             'docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true',
-            // Remove all images except the one we might need (if any)
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images -q | xargs -r crictl rmi 2>/dev/null || true" || true',
-            // Clean up containerd snapshots and layers
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl rmi --prune --all 2>/dev/null || true" || true',
-            // Clean up containerd content store (removes unused layers)
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl images --prune 2>/dev/null || true" || true',
+            'docker exec k3d-unity-builder-server-0 sh -c "crictl rmi --prune 2>/dev/null || true" || true',
           ];
           
           for (const cmd of cleanupCommands) {
@@ -182,6 +189,18 @@ class Kubernetes implements ProviderInterface {
               // Ignore individual command failures
               CloudRunnerLogger.log(`Cleanup command failed (non-fatal): ${cmdError}`);
             }
+          }
+          
+          // Verify Unity image is still cached
+          try {
+            const unityImageCheck = await CloudRunnerSystem.Run(
+              `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep unityci/editor || echo 'Unity image not found in agent'" || true`,
+              true,
+              true,
+            );
+            CloudRunnerLogger.log(`Unity image cache status:\n${unityImageCheck}`);
+          } catch {
+            // Ignore check failures
           }
           
           // Check disk space after cleanup

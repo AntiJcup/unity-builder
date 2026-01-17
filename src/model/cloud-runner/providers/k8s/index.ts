@@ -244,26 +244,96 @@ class Kubernetes implements ProviderInterface {
 
       let output = '';
       try {
-        // Before creating the job, verify we have the Unity image cached or enough space to pull it
+        // Before creating the job, verify we have the Unity image cached on the agent node
+        // If not cached, try to ensure it's available to avoid disk pressure during pull
         if (process.env['cloudRunnerTests'] === 'true' && image.includes('unityci/editor')) {
           try {
             const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
-            const imageCheck = await CloudRunnerSystem.Run(
+            
+            // Check if image is cached on agent node (where pods run)
+            const agentImageCheck = await CloudRunnerSystem.Run(
               `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'cached' || echo 'not_cached'" || echo 'not_cached'`,
               true,
               true,
             );
             
-            if (imageCheck.includes('not_cached')) {
-              // Image not cached - check if we have enough space to pull it
+            if (agentImageCheck.includes('not_cached')) {
+              // Check if image is on server node
+              const serverImageCheck = await CloudRunnerSystem.Run(
+                `docker exec k3d-unity-builder-server-0 sh -c "crictl images | grep -q unityci/editor && echo 'cached' || echo 'not_cached'" || echo 'not_cached'`,
+                true,
+                true,
+              );
+              
+              // Check available disk space on agent node
               const diskInfo = await CloudRunnerSystem.Run(
                 'docker exec k3d-unity-builder-agent-0 sh -c "df -h /var/lib/rancher/k3s 2>/dev/null | tail -1 || df -h / 2>/dev/null | tail -1 || echo unknown" || echo unknown',
                 true,
                 true,
               );
+              
               CloudRunnerLogger.logWarning(
-                `Unity image not cached on agent node. Disk info: ${diskInfo.trim()}. Pod will attempt to pull image (3.9GB) which may fail due to disk pressure.`,
+                `Unity image not cached on agent node (where pods run). Server node: ${serverImageCheck.includes('cached') ? 'has image' : 'no image'}. Disk info: ${diskInfo.trim()}. Pod will attempt to pull image (3.9GB) which may fail due to disk pressure.`,
               );
+              
+              // If image is on server but not agent, try to pull it on agent
+              // This is a best-effort attempt - if it fails, the pod will try anyway
+              if (serverImageCheck.includes('cached')) {
+                CloudRunnerLogger.log(
+                  'Unity image exists on server node but not agent node. Attempting to pull on agent node to avoid pod pull failures...',
+                );
+                try {
+                  // Use crictl to pull the image on the agent node
+                  // Note: This might fail if there's not enough space, but we'll try anyway
+                  const pullOutput = await CloudRunnerSystem.Run(
+                    `docker exec k3d-unity-builder-agent-0 sh -c "crictl pull ${image} 2>&1" || true`,
+                    true,
+                    true,
+                  );
+                  CloudRunnerLogger.log(`Image pull attempt on agent node: ${pullOutput}`);
+                  
+                  // Verify the pull succeeded
+                  const verifyPull = await CloudRunnerSystem.Run(
+                    `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'pull_success' || echo 'pull_failed'" || echo 'pull_failed'`,
+                    true,
+                    true,
+                  );
+                  
+                  if (verifyPull.includes('pull_success')) {
+                    CloudRunnerLogger.log('Successfully pulled Unity image on agent node');
+                  } else {
+                    CloudRunnerLogger.logWarning(
+                      'Failed to pull Unity image on agent node. Pod will attempt pull during scheduling, which may fail due to disk pressure.',
+                    );
+                  }
+                } catch (pullError) {
+                  CloudRunnerLogger.logWarning(
+                    `Failed to pre-pull image on agent node: ${pullError}. Pod will attempt pull during scheduling.`,
+                  );
+                }
+              } else {
+                // Image not on either node - check if we have enough space to pull
+                // Extract available space from disk info
+                const availableSpaceMatch = diskInfo.match(/(\d+(?:\.\d+)?)\s*([GMK]?i?B)/i);
+                if (availableSpaceMatch) {
+                  const availableValue = parseFloat(availableSpaceMatch[1]);
+                  const availableUnit = availableSpaceMatch[2].toUpperCase();
+                  let availableGB = availableValue;
+                  
+                  if (availableUnit.includes('M')) {
+                    availableGB = availableValue / 1024;
+                  } else if (availableUnit.includes('K')) {
+                    availableGB = availableValue / (1024 * 1024);
+                  }
+                  
+                  // Unity image is ~3.9GB, need at least 4.5GB to be safe
+                  if (availableGB < 4.5) {
+                    CloudRunnerLogger.logWarning(
+                      `CRITICAL: Unity image not cached and only ${availableGB.toFixed(2)}GB available. Image pull (3.9GB) will likely fail. Consider running cleanup or ensuring pre-pull step succeeds.`,
+                    );
+                  }
+                }
+              }
             } else {
               CloudRunnerLogger.log('Unity image is cached on agent node - pod should start without pulling');
             }

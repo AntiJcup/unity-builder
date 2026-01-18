@@ -80,7 +80,8 @@ class KubernetesStorage {
             {
               phase: pvcBody.status?.phase,
               conditions: pvcBody.status?.conditions,
-              message: pvcBody.status?.message,
+              accessModes: pvcBody.spec?.accessModes,
+              storageClassName: pvcBody.spec?.storageClassName,
             },
             undefined,
             4,

@@ -577,6 +577,11 @@ class KubernetesTaskRunner {
 
                   // Check pod conditions for scheduling issues
                   if (podStatusDetails?.conditions) {
+                    const allConditions = podStatusDetails.conditions.map(
+                      (c: any) => `${c.type}: ${c.status}${c.reason ? ` (${c.reason})` : ''}${c.message ? ` - ${c.message}` : ''}`,
+                    );
+                    message += `\n\nPod Conditions:\n${allConditions.join('\n')}`;
+                    
                     const unschedulable = podStatusDetails.conditions.find(
                       (c: any) => c.type === 'PodScheduled' && c.status === 'False',
                     );
@@ -584,6 +589,36 @@ class KubernetesTaskRunner {
                       message += `\n\nScheduling Issue: ${unschedulable.reason || 'Unknown'} - ${
                         unschedulable.message || 'No message'
                       }`;
+                    }
+                    
+                    // Check if pod is assigned to a node
+                    if (podStatusDetails.hostIP) {
+                      message += `\n\nPod assigned to node: ${podStatusDetails.hostIP}`;
+                    } else {
+                      message += `\n\nPod not yet assigned to a node (scheduling pending)`;
+                    }
+                  }
+                  
+                  // Check node resources if pod is assigned
+                  if (podStatusDetails.hostIP) {
+                    try {
+                      const nodes = await kubeClient.listNode();
+                      const assignedNode = nodes.body.items.find((n: any) => 
+                        n.status.addresses?.some((a: any) => a.address === podStatusDetails.hostIP)
+                      );
+                      if (assignedNode) {
+                        const allocatable = assignedNode.status.allocatable || {};
+                        const capacity = assignedNode.status.capacity || {};
+                        message += `\n\nNode Resources (${assignedNode.metadata.name}):\n  Allocatable CPU: ${allocatable.cpu || 'unknown'}\n  Allocatable Memory: ${allocatable.memory || 'unknown'}\n  Allocatable Ephemeral Storage: ${allocatable['ephemeral-storage'] || 'unknown'}`;
+                        
+                        // Check for taints that might prevent scheduling
+                        if (assignedNode.spec.taints && assignedNode.spec.taints.length > 0) {
+                          const taints = assignedNode.spec.taints.map((t: any) => `${t.key}=${t.value}:${t.effect}`).join(', ');
+                          message += `\n  Node Taints: ${taints}`;
+                        }
+                      }
+                    } catch (nodeError) {
+                      // Ignore node check errors
                     }
                   }
                 } catch (podStatusError) {

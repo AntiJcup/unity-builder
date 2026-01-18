@@ -49,26 +49,46 @@ class KubernetesStorage {
   public static async watchUntilPVCNotPending(kubeClient: k8s.CoreV1Api, name: string, namespace: string) {
     try {
       CloudRunnerLogger.log(`watch Until PVC Not Pending ${name} ${namespace}`);
-      CloudRunnerLogger.log(`${await this.getPVCPhase(kubeClient, name, namespace)}`);
+      const initialPhase = await this.getPVCPhase(kubeClient, name, namespace);
+      CloudRunnerLogger.log(`Initial PVC phase: ${initialPhase}`);
+      
+      // Wait until PVC is NOT Pending (i.e., Bound or Available)
       await waitUntil(
         async () => {
-          return (await this.getPVCPhase(kubeClient, name, namespace)) === 'Pending';
+          const phase = await this.getPVCPhase(kubeClient, name, namespace);
+          return phase !== 'Pending';
         },
         {
           timeout: 750000,
           intervalBetweenAttempts: 15000,
         },
       );
+      
+      const finalPhase = await this.getPVCPhase(kubeClient, name, namespace);
+      CloudRunnerLogger.log(`PVC phase after wait: ${finalPhase}`);
+      
+      if (finalPhase === 'Pending') {
+        throw new Error(`PVC ${name} is still Pending after timeout`);
+      }
     } catch (error: any) {
       core.error('Failed to watch PVC');
       core.error(error.toString());
-      core.error(
-        `PVC Body: ${JSON.stringify(
-          (await kubeClient.readNamespacedPersistentVolumeClaim(name, namespace)).body,
-          undefined,
-          4,
-        )}`,
-      );
+      try {
+        const pvcBody = (await kubeClient.readNamespacedPersistentVolumeClaim(name, namespace)).body;
+        core.error(
+          `PVC Body: ${JSON.stringify(
+            {
+              phase: pvcBody.status?.phase,
+              conditions: pvcBody.status?.conditions,
+              message: pvcBody.status?.message,
+            },
+            undefined,
+            4,
+          )}`,
+        );
+      } catch {
+        // Ignore PVC read errors
+      }
       throw error;
     }
   }

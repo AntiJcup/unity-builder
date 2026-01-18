@@ -50,6 +50,44 @@ class KubernetesStorage {
     let checkCount = 0;
     try {
       CloudRunnerLogger.log(`watch Until PVC Not Pending ${name} ${namespace}`);
+      
+      // Check if storage class uses WaitForFirstConsumer binding mode
+      // If so, skip waiting - PVC will bind when pod is created
+      let shouldSkipWait = false;
+      try {
+        const pvcBody = (await kubeClient.readNamespacedPersistentVolumeClaim(name, namespace)).body;
+        const storageClassName = pvcBody.spec?.storageClassName;
+        
+        if (storageClassName) {
+          const kubeConfig = new k8s.KubeConfig();
+          kubeConfig.loadFromDefault();
+          const storageV1Api = kubeConfig.makeApiClient(k8s.StorageV1Api);
+          
+          try {
+            const sc = await storageV1Api.readStorageClass(storageClassName);
+            const volumeBindingMode = sc.body.volumeBindingMode;
+            
+            if (volumeBindingMode === 'WaitForFirstConsumer') {
+              CloudRunnerLogger.log(
+                `StorageClass "${storageClassName}" uses WaitForFirstConsumer binding mode. PVC will bind when pod is created. Skipping wait.`,
+              );
+              shouldSkipWait = true;
+            }
+          } catch (scError) {
+            // If we can't check the storage class, proceed with normal wait
+            CloudRunnerLogger.log(`Could not check storage class binding mode: ${scError}. Proceeding with normal wait.`);
+          }
+        }
+      } catch (pvcReadError) {
+        // If we can't read PVC, proceed with normal wait
+        CloudRunnerLogger.log(`Could not read PVC to check storage class: ${pvcReadError}. Proceeding with normal wait.`);
+      }
+      
+      if (shouldSkipWait) {
+        CloudRunnerLogger.log(`Skipping PVC wait - will bind when pod is created`);
+        return;
+      }
+      
       const initialPhase = await this.getPVCPhase(kubeClient, name, namespace);
       CloudRunnerLogger.log(`Initial PVC phase: ${initialPhase}`);
       
@@ -78,6 +116,17 @@ class KubernetesStorage {
               
               if (pvcEvents.length > 0) {
                 CloudRunnerLogger.log(`PVC Events: ${JSON.stringify(pvcEvents, undefined, 2)}`);
+                
+                // Check if event indicates WaitForFirstConsumer
+                const waitForConsumerEvent = pvcEvents.find(
+                  (e) => e.reason === 'WaitForFirstConsumer' || e.message?.includes('waiting for first consumer'),
+                );
+                if (waitForConsumerEvent) {
+                  CloudRunnerLogger.log(
+                    `PVC is waiting for first consumer. This is normal for WaitForFirstConsumer storage classes. Proceeding without waiting.`,
+                  );
+                  return true; // Exit wait loop - PVC will bind when pod is created
+                }
               }
             } catch (eventError) {
               // Ignore event fetch errors

@@ -592,7 +592,7 @@ class KubernetesTaskRunner {
                     }
                     
                     // Check if pod is assigned to a node
-                    if (podStatusDetails.hostIP) {
+                    if (podStatusDetails?.hostIP) {
                       message += `\n\nPod assigned to node: ${podStatusDetails.hostIP}`;
                     } else {
                       message += `\n\nPod not yet assigned to a node (scheduling pending)`;
@@ -600,19 +600,20 @@ class KubernetesTaskRunner {
                   }
                   
                   // Check node resources if pod is assigned
-                  if (podStatusDetails.hostIP) {
+                  if (podStatusDetails?.hostIP) {
                     try {
                       const nodes = await kubeClient.listNode();
+                      const hostIP = podStatusDetails.hostIP;
                       const assignedNode = nodes.body.items.find((n: any) => 
-                        n.status.addresses?.some((a: any) => a.address === podStatusDetails.hostIP)
+                        n.status?.addresses?.some((a: any) => a.address === hostIP)
                       );
-                      if (assignedNode) {
+                      if (assignedNode?.status && assignedNode.metadata?.name) {
                         const allocatable = assignedNode.status.allocatable || {};
                         const capacity = assignedNode.status.capacity || {};
                         message += `\n\nNode Resources (${assignedNode.metadata.name}):\n  Allocatable CPU: ${allocatable.cpu || 'unknown'}\n  Allocatable Memory: ${allocatable.memory || 'unknown'}\n  Allocatable Ephemeral Storage: ${allocatable['ephemeral-storage'] || 'unknown'}`;
                         
                         // Check for taints that might prevent scheduling
-                        if (assignedNode.spec.taints && assignedNode.spec.taints.length > 0) {
+                        if (assignedNode.spec?.taints && assignedNode.spec.taints.length > 0) {
                           const taints = assignedNode.spec.taints.map((t: any) => `${t.key}=${t.value}:${t.effect}`).join(', ');
                           message += `\n  Node Taints: ${taints}`;
                         }

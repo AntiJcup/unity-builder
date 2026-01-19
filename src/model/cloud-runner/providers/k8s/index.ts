@@ -186,56 +186,6 @@ class Kubernetes implements ProviderInterface {
               CloudRunnerLogger.log(`Cleanup command failed (non-fatal): ${cmdError}`);
             }
           }
-
-          // Verify Unity image is cached on the AGENT node (where pods run)
-          // This is critical - if the image isn't on the agent node, pods will try to pull it
-          let unityImageCached = false;
-          try {
-            const unityImageCheckAgent = await CloudRunnerSystem.Run(
-              `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'found' || echo 'not found'" || echo 'not found'`,
-              true,
-              true,
-            );
-            unityImageCached = unityImageCheckAgent.includes('found');
-            CloudRunnerLogger.log(
-              `Unity image cache status on agent node: ${unityImageCached ? 'CACHED' : 'NOT CACHED'}`,
-            );
-            
-            if (!unityImageCached) {
-              // Check if it's on the server node (might need to be copied)
-              const unityImageCheckServer = await CloudRunnerSystem.Run(
-                `docker exec k3d-unity-builder-server-0 sh -c "crictl images | grep -q unityci/editor && echo 'found' || echo 'not found'" || echo 'not found'`,
-                true,
-                true,
-              );
-              CloudRunnerLogger.log(
-                `Unity image cache status on server node: ${unityImageCheckServer.includes('found') ? 'CACHED' : 'NOT CACHED'}`,
-              );
-              
-              // Check available disk space
-              const diskCheck = await CloudRunnerSystem.Run(
-                'docker exec k3d-unity-builder-agent-0 sh -c "df -h /var/lib/rancher/k3s 2>/dev/null | tail -1 | awk \'{print $4}\' || df -h / 2>/dev/null | tail -1 | awk \'{print $4}\' || echo unknown" || echo unknown',
-                true,
-                true,
-              );
-              CloudRunnerLogger.log(`Available disk space on agent node: ${diskCheck.trim()}`);
-              
-              // Unity image is ~3.9GB, so we need at least 4-5GB free
-              // If we have less than 4GB, warn that pull will likely fail
-              const availableSpaceStr = diskCheck.trim().toLowerCase();
-              if (availableSpaceStr.includes('g')) {
-                const availableGB = parseFloat(availableSpaceStr);
-                if (availableGB < 4) {
-                  CloudRunnerLogger.logWarning(
-                    `WARNING: Unity image not cached and only ${availableGB}GB available. Image pull (3.9GB) will likely fail due to disk pressure.`,
-                  );
-                }
-              }
-            }
-          } catch {
-            // Ignore check failures - continue and hope image is cached
-            CloudRunnerLogger.logWarning('Failed to check Unity image cache status');
-          }
         } catch (cleanupError) {
           CloudRunnerLogger.logWarning(`Failed to cleanup images before job creation: ${cleanupError}`);
           // Continue anyway - image might already be cached
@@ -276,41 +226,16 @@ class Kubernetes implements ProviderInterface {
                 `Unity image not cached on agent node (where pods run). Server node: ${serverImageCheck.includes('cached') ? 'has image' : 'no image'}. Disk info: ${diskInfo.trim()}. Pod will attempt to pull image (3.9GB) which may fail due to disk pressure.`,
               );
               
-              // If image is on server but not agent, try to pull it on agent
-              // This is a best-effort attempt - if it fails, the pod will try anyway
+              // If image is on server but not agent, log a warning
+              // NOTE: We don't attempt to pull here because:
+              // 1. Pulling a 3.9GB image can take several minutes and block the test
+              // 2. If there's not enough disk space, the pull will hang indefinitely
+              // 3. The pod will attempt to pull during scheduling anyway
+              // 4. If the pull fails, Kubernetes will provide proper error messages
               if (serverImageCheck.includes('cached')) {
-                CloudRunnerLogger.log(
-                  'Unity image exists on server node but not agent node. Attempting to pull on agent node to avoid pod pull failures...',
+                CloudRunnerLogger.logWarning(
+                  'Unity image exists on server node but not agent node. Pod will attempt to pull during scheduling. If pull fails due to disk pressure, ensure cleanup runs before this test.',
                 );
-                try {
-                  // Use crictl to pull the image on the agent node
-                  // Note: This might fail if there's not enough space, but we'll try anyway
-                  const pullOutput = await CloudRunnerSystem.Run(
-                    `docker exec k3d-unity-builder-agent-0 sh -c "crictl pull ${image} 2>&1" || true`,
-                    true,
-                    true,
-                  );
-                  CloudRunnerLogger.log(`Image pull attempt on agent node: ${pullOutput}`);
-                  
-                  // Verify the pull succeeded
-                  const verifyPull = await CloudRunnerSystem.Run(
-                    `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'pull_success' || echo 'pull_failed'" || echo 'pull_failed'`,
-                    true,
-                    true,
-                  );
-                  
-                  if (verifyPull.includes('pull_success')) {
-                    CloudRunnerLogger.log('Successfully pulled Unity image on agent node');
-                  } else {
-                    CloudRunnerLogger.logWarning(
-                      'Failed to pull Unity image on agent node. Pod will attempt pull during scheduling, which may fail due to disk pressure.',
-                    );
-                  }
-                } catch (pullError) {
-                  CloudRunnerLogger.logWarning(
-                    `Failed to pre-pull image on agent node: ${pullError}. Pod will attempt pull during scheduling.`,
-                  );
-                }
               } else {
                 // Image not on either node - check if we have enough space to pull
                 // Extract available space from disk info

@@ -242,49 +242,38 @@ jobs:
           echo "Cleaning up before pre-pulling image..."
           for NODE in $K3D_NODE_CONTAINERS; do
             docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
-            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+            # Only remove non-Unity images to preserve space while keeping Unity image if already cached
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
           done || true
           
-          echo "Creating a temporary pod to pull and cache the Unity image..."
-          kubectl run image-puller --image="$UNITY_IMAGE" --restart=Never --command -- sleep 1 || true
-          echo "Waiting for image pull to complete (this may take several minutes for 3.9GB image)..."
-          
-          # Wait for pod to be scheduled and image to be pulled
-          MAX_WAIT=600
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            POD_STATUS=$(kubectl get pod image-puller -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-            if [ "$POD_STATUS" = "Running" ] || [ "$POD_STATUS" = "Succeeded" ]; then
-              echo "Image pull pod is $POD_STATUS"
-              break
-            elif [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Evicted" ]; then
-              echo "Warning: Image pull pod status is $POD_STATUS. Checking events..."
-              kubectl describe pod image-puller 2>/dev/null | tail -20 || true
-              # Try to continue anyway - image might be partially cached
-              break
-            fi
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-            echo "Waiting for image pull... ($ELAPSED/$MAX_WAIT seconds)"
-          done
-          
-          sleep 10
-          kubectl delete pod image-puller --ignore-not-found=true || true
-          for i in {1..30}; do
-            if ! kubectl get pod image-puller 2>/dev/null; then
-              echo "Pre-pull pod fully deleted (attempt $i/30)"
-              break
-            fi
-            sleep 2
-          done
-          sleep 5
-          
-          # Clean up the pod runtime but keep the image
+          # Explicitly pull the image on BOTH nodes to ensure it's cached wherever pods might be scheduled
+          # This prevents "no space left" errors when pods are scheduled on nodes without the cached image
+          echo "Pulling Unity image directly on each node to ensure it's cached..."
           for NODE in $K3D_NODE_CONTAINERS; do
-            docker exec "$NODE" sh -c "
-              crictl rmp --all 2>/dev/null || true
-              find /var/lib/rancher/k3s/agent/containerd/io.containerd.runtime.v2.task/default -name '*image-puller*' -exec rm -rf {} + 2>/dev/null || true
-            " || true
+            echo "Checking if image already exists on $NODE..."
+            IMAGE_EXISTS=$(docker exec "$NODE" sh -c "crictl images | grep -q unityci/editor && echo 'yes' || echo 'no'" || echo "no")
+            if [ "$IMAGE_EXISTS" = "yes" ]; then
+              echo "Unity image already cached on $NODE, skipping pull"
+            else
+              echo "Pulling Unity image on $NODE (this may take several minutes for 3.9GB image)..."
+              # Use crictl pull directly in the node's containerd
+              # This ensures the image is cached in the node's local storage
+              # Use timeout to prevent hanging indefinitely (10 minutes max)
+              if timeout 600 docker exec "$NODE" sh -c "crictl pull $UNITY_IMAGE 2>&1"; then
+                echo "Successfully pulled image on $NODE"
+                # Verify it's cached
+                docker exec "$NODE" sh -c "crictl images | grep unityci/editor || echo 'Warning: Image not found after pull'" || true
+              else
+                PULL_EXIT_CODE=$?
+                if [ $PULL_EXIT_CODE -eq 124 ]; then
+                  echo "Warning: Image pull on $NODE timed out after 10 minutes. Checking if partially cached..."
+                else
+                  echo "Warning: Image pull on $NODE failed (exit code: $PULL_EXIT_CODE). Checking if partially cached..."
+                fi
+                docker exec "$NODE" sh -c "crictl images | grep unityci/editor || echo 'Image not found on $NODE'" || true
+                echo "Note: Pods scheduled on $NODE will attempt to pull the image during runtime, which may fail if disk space is insufficient."
+              fi
+            fi
           done
           
           # Verify image is cached

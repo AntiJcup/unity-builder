@@ -163,29 +163,34 @@ class Kubernetes implements ProviderInterface {
           CloudRunnerLogger.log('Cleaning up old images in k3d node before pulling new image...');
           const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
 
-          // Extract image name without tag for matching
-          const imageName = image.split(':')[0];
-          const imageTag = image.split(':')[1] || 'latest';
+          // Aggressive cleanup: remove stopped containers and non-Unity images
+          // IMPORTANT: Preserve Unity images (unityci/editor) to avoid re-pulling the 3.9GB image
+          const K3D_NODE_CONTAINERS = ['k3d-unity-builder-agent-0', 'k3d-unity-builder-server-0'];
+          const cleanupCommands: string[] = [];
 
-          // More targeted cleanup: remove stopped containers only
-          // IMPORTANT: Do NOT remove images - preserve Unity image to avoid re-pulling the 3.9GB image
-          // Strategy: Only remove containers, never touch images (safest approach)
-          const cleanupCommands = [
+          for (const NODE of K3D_NODE_CONTAINERS) {
             // Remove all stopped containers (this frees runtime space but keeps images)
-            'docker exec k3d-unity-builder-agent-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
-            'docker exec k3d-unity-builder-server-0 sh -c "crictl rm --all 2>/dev/null || true" || true',
-            // DO NOT remove images - preserve everything including Unity image
-            // Removing images risks removing the Unity image which causes "no space left" errors
-          ];
+            cleanupCommands.push(
+              `docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`,
+            );
+            // Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            // This is safe because we explicitly exclude Unity images from deletion
+            cleanupCommands.push(
+              `docker exec ${NODE} sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true`,
+            );
+            // Clean up unused layers (prune should preserve referenced images)
+            cleanupCommands.push(`docker exec ${NODE} sh -c "crictl rmi --prune 2>/dev/null || true" || true`);
+          }
 
           for (const cmd of cleanupCommands) {
             try {
               await CloudRunnerSystem.Run(cmd, true, true);
             } catch (cmdError) {
-              // Ignore individual command failures
+              // Ignore individual command failures - cleanup is best effort
               CloudRunnerLogger.log(`Cleanup command failed (non-fatal): ${cmdError}`);
             }
           }
+          CloudRunnerLogger.log('Cleanup completed (containers and non-Unity images removed, Unity images preserved)');
         } catch (cleanupError) {
           CloudRunnerLogger.logWarning(`Failed to cleanup images before job creation: ${cleanupError}`);
           // Continue anyway - image might already be cached

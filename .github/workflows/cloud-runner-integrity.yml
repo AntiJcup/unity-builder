@@ -330,6 +330,32 @@ jobs:
           containerMemory: '512'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up after cloud-runner-image test
+        if: always()
+        run: |
+          echo "Cleaning up after cloud-runner-image test..."
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          # Aggressive cleanup in k3d nodes, but preserve Unity images
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            # Remove stopped containers
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done || true
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
       - name: Run cloud-runner-kubernetes test
         timeout-minutes: 30
         run: yarn run test "cloud-runner-kubernetes" --detectOpenHandles --forceExit --runInBand
@@ -356,6 +382,32 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up after cloud-runner-kubernetes test
+        if: always()
+        run: |
+          echo "Cleaning up after cloud-runner-kubernetes test..."
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          # Aggressive cleanup in k3d nodes, but preserve Unity images
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            # Remove stopped containers
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done || true
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
       - name: Run cloud-runner-s3-steps test (K8s)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand
@@ -382,6 +434,32 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up after cloud-runner-s3-steps test
+        if: always()
+        run: |
+          echo "Cleaning up after cloud-runner-s3-steps test..."
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          # Aggressive cleanup in k3d nodes, but preserve Unity images
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            # Remove stopped containers
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done || true
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
       - name: Run cloud-runner-end2end-caching test (K8s)
         timeout-minutes: 60
         run: yarn run test "cloud-runner-end2end-caching" --detectOpenHandles --forceExit --runInBand
@@ -408,6 +486,32 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
           GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up after cloud-runner-end2end-caching test
+        if: always()
+        run: |
+          echo "Cleaning up after cloud-runner-end2end-caching test..."
+          kubectl delete jobs --all --ignore-not-found=true -n default || true
+          kubectl get pods -n default -o name 2>/dev/null | grep -E "(unity-builder-job-|helper-pod-)" | while read pod; do
+            kubectl delete "$pod" --ignore-not-found=true || true
+          done || true
+          kubectl get pvc -n default -o name 2>/dev/null | grep "unity-builder-pvc-" | while read pvc; do
+            kubectl delete "$pvc" --ignore-not-found=true || true
+          done || true
+          kubectl get secrets -n default -o name 2>/dev/null | grep "build-credentials-" | while read secret; do
+            kubectl delete "$secret" --ignore-not-found=true || true
+          done || true
+          # Aggressive cleanup in k3d nodes, but preserve Unity images
+          K3D_NODE_CONTAINERS="${K3D_NODE_CONTAINERS:-k3d-unity-builder-agent-0 k3d-unity-builder-server-0}"
+          for NODE in $K3D_NODE_CONTAINERS; do
+            # Remove stopped containers
+            docker exec "$NODE" sh -c "crictl rm --all 2>/dev/null || true" || true
+            # Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
+            docker exec "$NODE" sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true
+            # Clean up unused layers
+            docker exec "$NODE" sh -c "crictl rmi --prune 2>/dev/null || true" || true
+          done || true
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
       - name: Clean up disk space before end2end-retaining test
         run: |
           echo "Cleaning up disk space before end2end-retaining test..."

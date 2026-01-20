@@ -50,23 +50,23 @@ class KubernetesStorage {
     let checkCount = 0;
     try {
       CloudRunnerLogger.log(`watch Until PVC Not Pending ${name} ${namespace}`);
-      
+
       // Check if storage class uses WaitForFirstConsumer binding mode
       // If so, skip waiting - PVC will bind when pod is created
       let shouldSkipWait = false;
       try {
         const pvcBody = (await kubeClient.readNamespacedPersistentVolumeClaim(name, namespace)).body;
         const storageClassName = pvcBody.spec?.storageClassName;
-        
+
         if (storageClassName) {
           const kubeConfig = new k8s.KubeConfig();
           kubeConfig.loadFromDefault();
           const storageV1Api = kubeConfig.makeApiClient(k8s.StorageV1Api);
-          
+
           try {
             const sc = await storageV1Api.readStorageClass(storageClassName);
             const volumeBindingMode = sc.body.volumeBindingMode;
-            
+
             if (volumeBindingMode === 'WaitForFirstConsumer') {
               CloudRunnerLogger.log(
                 `StorageClass "${storageClassName}" uses WaitForFirstConsumer binding mode. PVC will bind when pod is created. Skipping wait.`,
@@ -75,32 +75,36 @@ class KubernetesStorage {
             }
           } catch (scError) {
             // If we can't check the storage class, proceed with normal wait
-            CloudRunnerLogger.log(`Could not check storage class binding mode: ${scError}. Proceeding with normal wait.`);
+            CloudRunnerLogger.log(
+              `Could not check storage class binding mode: ${scError}. Proceeding with normal wait.`,
+            );
           }
         }
       } catch (pvcReadError) {
         // If we can't read PVC, proceed with normal wait
-        CloudRunnerLogger.log(`Could not read PVC to check storage class: ${pvcReadError}. Proceeding with normal wait.`);
+        CloudRunnerLogger.log(
+          `Could not read PVC to check storage class: ${pvcReadError}. Proceeding with normal wait.`,
+        );
       }
-      
+
       if (shouldSkipWait) {
         CloudRunnerLogger.log(`Skipping PVC wait - will bind when pod is created`);
         return;
       }
-      
+
       const initialPhase = await this.getPVCPhase(kubeClient, name, namespace);
       CloudRunnerLogger.log(`Initial PVC phase: ${initialPhase}`);
-      
+
       // Wait until PVC is NOT Pending (i.e., Bound or Available)
       await waitUntil(
         async () => {
           checkCount++;
           const phase = await this.getPVCPhase(kubeClient, name, namespace);
-          
+
           // Log progress every 4 checks (every ~60 seconds)
           if (checkCount % 4 === 0) {
             CloudRunnerLogger.log(`PVC ${name} still ${phase} (check ${checkCount})`);
-            
+
             // Fetch and log PVC events for diagnostics
             try {
               const events = await kubeClient.listNamespacedEvent(namespace);
@@ -113,10 +117,10 @@ class KubernetesStorage {
                   count: x.count || 0,
                 }))
                 .slice(-5); // Get last 5 events
-              
+
               if (pvcEvents.length > 0) {
                 CloudRunnerLogger.log(`PVC Events: ${JSON.stringify(pvcEvents, undefined, 2)}`);
-                
+
                 // Check if event indicates WaitForFirstConsumer
                 const waitForConsumerEvent = pvcEvents.find(
                   (e) => e.reason === 'WaitForFirstConsumer' || e.message?.includes('waiting for first consumer'),
@@ -132,7 +136,7 @@ class KubernetesStorage {
               // Ignore event fetch errors
             }
           }
-          
+
           return phase !== 'Pending';
         },
         {
@@ -140,10 +144,10 @@ class KubernetesStorage {
           intervalBetweenAttempts: 15000,
         },
       );
-      
+
       const finalPhase = await this.getPVCPhase(kubeClient, name, namespace);
       CloudRunnerLogger.log(`PVC phase after wait: ${finalPhase}`);
-      
+
       if (finalPhase === 'Pending') {
         throw new Error(`PVC ${name} is still Pending after timeout`);
       }
@@ -152,7 +156,7 @@ class KubernetesStorage {
       core.error(error.toString());
       try {
         const pvcBody = (await kubeClient.readNamespacedPersistentVolumeClaim(name, namespace)).body;
-        
+
         // Fetch PVC events for detailed diagnostics
         let pvcEvents: any[] = [];
         try {
@@ -168,7 +172,7 @@ class KubernetesStorage {
         } catch (eventError) {
           // Ignore event fetch errors
         }
-        
+
         // Check if storage class exists
         let storageClassInfo = '';
         try {
@@ -178,10 +182,12 @@ class KubernetesStorage {
             const kubeConfig = new k8s.KubeConfig();
             kubeConfig.loadFromDefault();
             const storageV1Api = kubeConfig.makeApiClient(k8s.StorageV1Api);
-            
+
             try {
               const sc = await storageV1Api.readStorageClass(storageClassName);
-              storageClassInfo = `StorageClass "${storageClassName}" exists. Provisioner: ${sc.body.provisioner || 'unknown'}`;
+              storageClassInfo = `StorageClass "${storageClassName}" exists. Provisioner: ${
+                sc.body.provisioner || 'unknown'
+              }`;
             } catch (scError: any) {
               if (scError.statusCode === 404) {
                 storageClassInfo = `StorageClass "${storageClassName}" does NOT exist! This is likely why the PVC is stuck in Pending.`;
@@ -194,7 +200,7 @@ class KubernetesStorage {
           // Ignore storage class check errors - not critical for diagnostics
           storageClassInfo = `Could not check storage class: ${scCheckError}`;
         }
-        
+
         core.error(
           `PVC Body: ${JSON.stringify(
             {
@@ -208,11 +214,11 @@ class KubernetesStorage {
             4,
           )}`,
         );
-        
+
         if (storageClassInfo) {
           core.error(storageClassInfo);
         }
-        
+
         if (pvcEvents.length > 0) {
           core.error(`PVC Events: ${JSON.stringify(pvcEvents, undefined, 2)}`);
         } else {

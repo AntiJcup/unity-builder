@@ -199,14 +199,14 @@ class Kubernetes implements ProviderInterface {
         if (process.env['cloudRunnerTests'] === 'true' && image.includes('unityci/editor')) {
           try {
             const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
-            
+
             // Check if image is cached on agent node (where pods run)
             const agentImageCheck = await CloudRunnerSystem.Run(
               `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'cached' || echo 'not_cached'" || echo 'not_cached'`,
               true,
               true,
             );
-            
+
             if (agentImageCheck.includes('not_cached')) {
               // Check if image is on server node
               const serverImageCheck = await CloudRunnerSystem.Run(
@@ -214,18 +214,20 @@ class Kubernetes implements ProviderInterface {
                 true,
                 true,
               );
-              
+
               // Check available disk space on agent node
               const diskInfo = await CloudRunnerSystem.Run(
                 'docker exec k3d-unity-builder-agent-0 sh -c "df -h /var/lib/rancher/k3s 2>/dev/null | tail -1 || df -h / 2>/dev/null | tail -1 || echo unknown" || echo unknown',
                 true,
                 true,
               );
-              
+
               CloudRunnerLogger.logWarning(
-                `Unity image not cached on agent node (where pods run). Server node: ${serverImageCheck.includes('cached') ? 'has image' : 'no image'}. Disk info: ${diskInfo.trim()}. Pod will attempt to pull image (3.9GB) which may fail due to disk pressure.`,
+                `Unity image not cached on agent node (where pods run). Server node: ${
+                  serverImageCheck.includes('cached') ? 'has image' : 'no image'
+                }. Disk info: ${diskInfo.trim()}. Pod will attempt to pull image (3.9GB) which may fail due to disk pressure.`,
               );
-              
+
               // If image is on server but not agent, log a warning
               // NOTE: We don't attempt to pull here because:
               // 1. Pulling a 3.9GB image can take several minutes and block the test
@@ -244,17 +246,19 @@ class Kubernetes implements ProviderInterface {
                   const availableValue = parseFloat(availableSpaceMatch[1]);
                   const availableUnit = availableSpaceMatch[2].toUpperCase();
                   let availableGB = availableValue;
-                  
+
                   if (availableUnit.includes('M')) {
                     availableGB = availableValue / 1024;
                   } else if (availableUnit.includes('K')) {
                     availableGB = availableValue / (1024 * 1024);
                   }
-                  
+
                   // Unity image is ~3.9GB, need at least 4.5GB to be safe
                   if (availableGB < 4.5) {
                     CloudRunnerLogger.logWarning(
-                      `CRITICAL: Unity image not cached and only ${availableGB.toFixed(2)}GB available. Image pull (3.9GB) will likely fail. Consider running cleanup or ensuring pre-pull step succeeds.`,
+                      `CRITICAL: Unity image not cached and only ${availableGB.toFixed(
+                        2,
+                      )}GB available. Image pull (3.9GB) will likely fail. Consider running cleanup or ensuring pre-pull step succeeds.`,
                     );
                   }
                 }
@@ -267,7 +271,7 @@ class Kubernetes implements ProviderInterface {
             CloudRunnerLogger.logWarning(`Failed to verify Unity image cache: ${checkError}`);
           }
         }
-        
+
         CloudRunnerLogger.log('Job does not exist');
         await this.createJob(commands, image, mountdir, workingdir, environment, secrets);
         CloudRunnerLogger.log('Watching pod until running');

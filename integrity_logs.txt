@@ -1,0 +1,193 @@
+﻿Tests	UNKNOWN STEP	∩╗┐2026-01-20T02:39:32.0810876Z Current runner version: '2.331.0'
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0832558Z ##[group]Runner Image Provisioner
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0833772Z Hosted Compute Agent
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0834421Z Version: 20251211.462
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0835000Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0835689Z Build Date: 2025-12-11T16:28:49Z
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0836331Z Worker ID: {a4957240-83a2-4087-919f-153ac384190a}
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0837038Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0837582Z ##[group]Operating System
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0838181Z Ubuntu
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0838645Z 24.04.3
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0839098Z LTS
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0839584Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0840084Z ##[group]Runner Image
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0840612Z Image: ubuntu-24.04
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0841069Z Version: 20260111.209.1
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0842129Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260111.209/images/ubuntu/Ubuntu2404-Readme.md
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0843927Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260111.209
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0844992Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0846095Z ##[group]GITHUB_TOKEN Permissions
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0848069Z Checks: write
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0848613Z Contents: read
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0849072Z Metadata: read
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0849644Z Statuses: write
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0850096Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0852189Z Secret source: Actions
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.0853310Z Prepare workflow directory
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.1308451Z Prepare all required actions
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.1344918Z Getting action download info
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.5164309Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.6266430Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.8602459Z Complete job name: Tests
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9273867Z ##[group]Run actions/checkout@v4
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9274709Z with:
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9275134Z   repository: game-ci/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9275830Z   token: ***
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9276200Z   ssh-strict: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9276587Z   ssh-user: git
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9276983Z   persist-credentials: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9277419Z   clean: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9277811Z   sparse-checkout-cone-mode: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9278275Z   fetch-depth: 1
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9278647Z   fetch-tags: false
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9279030Z   show-progress: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9279419Z   lfs: false
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9279769Z   submodules: false
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9280159Z   set-safe-directory: true
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9280774Z env:
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9281208Z   CODECOV_TOKEN: 2f2eb890-30e2-4724-83eb-7633832cf0de
+Tests	UNKNOWN STEP	2026-01-20T02:39:32.9281741Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.0360627Z Syncing repository: game-ci/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.0362328Z ##[group]Getting Git version info
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.0363357Z Working directory is '/home/runner/work/unity-builder/unity-builder'
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.0364390Z [command]/usr/bin/git version
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1252858Z git version 2.52.0
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1293303Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1311111Z Temporarily overriding HOME='/home/runner/work/_temp/2428e5bd-2fa1-47a2-9d51-46727c2ffa8d' before making global git config changes
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1318676Z Adding repository directory to the temporary git global config as a safe directory
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1320039Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/unity-builder/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1399694Z Deleting the contents of '/home/runner/work/unity-builder/unity-builder'
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1403984Z ##[group]Initializing the repository
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1408302Z [command]/usr/bin/git init /home/runner/work/unity-builder/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1943967Z hint: Using 'master' as the name for the initial branch. This default branch name
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1945587Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1947400Z hint: to use in all of your new repositories, which will suppress this warning,
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1948563Z hint: call:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1949029Z hint:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1949505Z hint: 	git config --global init.defaultBranch <name>
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1950476Z hint:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1951364Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1952862Z hint: 'development'. The just-created branch can be renamed via this command:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1954220Z hint:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1954652Z hint: 	git branch -m <name>
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1955137Z hint:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1956122Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1982623Z Initialized empty Git repository in /home/runner/work/unity-builder/unity-builder/.git/
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.1994277Z [command]/usr/bin/git remote add origin https://github.com/game-ci/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2064977Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2066119Z ##[group]Disabling automatic garbage collection
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2069813Z [command]/usr/bin/git config --local gc.auto 0
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2100703Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2102030Z ##[group]Setting up auth
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2108139Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.2140174Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.3530693Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.3564169Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.3779636Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.3810083Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.4039187Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.4071686Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.4073940Z ##[group]Fetching the repository
+Tests	UNKNOWN STEP	2026-01-20T02:39:33.4081558Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +975817b7ba950c3b8787e913e20fb741cb05c9f2:refs/remotes/pull/731/merge
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6845919Z From https://github.com/game-ci/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6848124Z  * [new ref]         975817b7ba950c3b8787e913e20fb741cb05c9f2 -> pull/731/merge
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6918391Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6919976Z ##[group]Determining the checkout info
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6921294Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.6926363Z [command]/usr/bin/git sparse-checkout disable
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.7006002Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.7032331Z ##[group]Checking out the ref
+Tests	UNKNOWN STEP	2026-01-20T02:39:34.7036294Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/731/merge
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3046502Z Note: switching to 'refs/remotes/pull/731/merge'.
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3047123Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3047531Z You are in 'detached HEAD' state. You can look around, make experimental
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3048506Z changes and commit them, and you can discard any commits you make in this
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3049456Z state without impacting any branches by switching back to a branch.
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3049851Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3050101Z If you want to create a new branch to retain commits you create, you may
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3050654Z do so (now or later) by using -c with the switch command. Example:
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3050948Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3051074Z   git switch -c <new-branch-name>
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3051804Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3051956Z Or undo this operation with:
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3052152Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3052307Z   git switch -
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3052465Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3052701Z Turn off this advice by setting config variable advice.detachedHead to false
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3053228Z 
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3053637Z HEAD is now at 975817b Merge ad5dd3b9c1267b1b8d2f7b8c1c045872d2934d67 into 0c82a58873f2933c4a56f101ec48efb12cddbafc
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3376736Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3411201Z [command]/usr/bin/git log -1 --format=%H
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3432965Z 975817b7ba950c3b8787e913e20fb741cb05c9f2
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3663729Z ##[group]Run actions/setup-node@v4
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3664069Z with:
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3664295Z   node-version: 18
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3664520Z   always-auth: false
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3664759Z   check-latest: false
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3665133Z   token: ***
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3665334Z env:
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3665624Z   CODECOV_TOKEN: 2f2eb890-30e2-4724-83eb-7633832cf0de
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.3665937Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:35.5660123Z Attempting to download 18...
+Tests	UNKNOWN STEP	2026-01-20T02:39:36.2719888Z Acquiring 18.20.8 - x64 from https://github.com/actions/node-versions/releases/download/18.20.8-14110393767/node-18.20.8-linux-x64.tar.gz
+Tests	UNKNOWN STEP	2026-01-20T02:39:36.8702509Z Extracting ...
+Tests	UNKNOWN STEP	2026-01-20T02:39:36.8800276Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/b2d9b609-237b-4935-ae84-4a1a398f82dc -f /home/runner/work/_temp/8d394b39-db29-4ecc-91d0-c4499ad6fb31
+Tests	UNKNOWN STEP	2026-01-20T02:39:37.8201622Z Adding to the cache ...
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.5224426Z ##[group]Environment details
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8526276Z node: v18.20.8
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8526842Z npm: 10.8.2
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8527153Z yarn: 1.22.22
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8527820Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8693647Z ##[group]Run yarn
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8693925Z [36;1myarn[0m
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8730425Z shell: /usr/bin/bash -e {0}
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8730716Z env:
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8730960Z   CODECOV_TOKEN: 2f2eb890-30e2-4724-83eb-7633832cf0de
+Tests	UNKNOWN STEP	2026-01-20T02:39:39.8731263Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:39:40.0192070Z yarn install v1.22.22
+Tests	UNKNOWN STEP	2026-01-20T02:39:40.0944074Z [1/6] Validating package.json...
+Tests	UNKNOWN STEP	2026-01-20T02:39:40.0981031Z [2/6] Resolving packages...
+Tests	UNKNOWN STEP	2026-01-20T02:39:40.4564125Z [3/6] Auditing packages...
+Tests	UNKNOWN STEP	2026-01-20T02:39:42.0152111Z [4/6] Fetching packages...
+Tests	UNKNOWN STEP	2026-01-20T02:39:56.8549208Z [5/6] Linking dependencies...
+Tests	UNKNOWN STEP	2026-01-20T02:39:56.8577079Z warning " > eslint-plugin-github@4.9.2" has incorrect peer dependency "eslint@^8.0.1".
+Tests	UNKNOWN STEP	2026-01-20T02:39:56.8584081Z warning "eslint-plugin-github > eslint-plugin-prettier@5.0.0" has incorrect peer dependency "eslint@>=8.0.0".
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.4081406Z [6/6] Building fresh packages...
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.4592081Z 113 vulnerabilities found - Packages audited: 1137
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.4592733Z Severity: 24 Low | 49 Moderate | 29 High | 11 Critical
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.4593719Z warning Security audit found potential problems. Run "yarn audit" for additional details.
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.4788742Z $ lefthook install
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5255898Z sync hooks: Γ£ö∩╕Å (pre-commit)
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5297446Z Done in 24.52s.
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5727420Z ##[group]Run yarn lint
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5727653Z [36;1myarn lint[0m
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5760221Z shell: /usr/bin/bash -e {0}
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5760444Z env:
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5760647Z   CODECOV_TOKEN: 2f2eb890-30e2-4724-83eb-7633832cf0de
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.5760926Z ##[endgroup]
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.7194816Z yarn run v1.22.22
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.7607080Z $ prettier --check "src/**/*.{js,ts}" && eslint src/**/*.ts
+Tests	UNKNOWN STEP	2026-01-20T02:40:04.9494415Z Checking formatting...
+Tests	UNKNOWN STEP	2026-01-20T02:40:06.0250292Z [warn] src/model/cloud-runner/providers/k8s/index.ts
+Tests	UNKNOWN STEP	2026-01-20T02:40:06.1312726Z [warn] src/model/cloud-runner/providers/k8s/kubernetes-storage.ts
+Tests	UNKNOWN STEP	2026-01-20T02:40:06.2223693Z [warn] src/model/cloud-runner/providers/k8s/kubernetes-task-runner.ts
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.2742328Z [warn] Code style issues found in 3 files. Forgot to run Prettier?
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.3182808Z error Command failed with exit code 1.
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.3184438Z info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.3311465Z ##[error]Process completed with exit code 1.
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.3431836Z Post job cleanup.
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4360606Z [command]/usr/bin/git version
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4400709Z git version 2.52.0
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4442854Z Temporarily overriding HOME='/home/runner/work/_temp/b2623478-38f6-4874-aa15-98ae2b936d86' before making global git config changes
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4444556Z Adding repository directory to the temporary git global config as a safe directory
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4449213Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/unity-builder/unity-builder
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4482646Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4514730Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4736176Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4755894Z http.https://github.com/.extraheader
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4767943Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.4800147Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.5014607Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.5043444Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Tests	UNKNOWN STEP	2026-01-20T02:40:07.5365703Z Cleaning up orphan processes

@@ -14,11 +14,13 @@ import GitHub from '../../github';
 import BuildParameters from '../../build-parameters';
 import { Cli } from '../../cli/cli';
 import CloudRunnerOptions from '../options/cloud-runner-options';
+import ResourceTracking from '../services/core/resource-tracking';
 
 export class RemoteClient {
   @CliFunction(`remote-cli-pre-build`, `sets up a repository, usually before a game-ci build`)
   static async setupRemoteClient() {
     CloudRunnerLogger.log(`bootstrap game ci cloud runner...`);
+    await ResourceTracking.logDiskUsageSnapshot('remote-cli-pre-build (start)');
     if (!(await RemoteClient.handleRetainedWorkspace())) {
       await RemoteClient.bootstrapRepository();
     }
@@ -206,6 +208,7 @@ export class RemoteClient {
     // that read from the log file rather than stdout
     RemoteClientLogger.log(successMessage);
     CloudRunnerLogger.log(successMessage);
+    await ResourceTracking.logDiskUsageSnapshot('remote-cli-post-build (end)');
 
     return new Promise((result) => result(``));
   }

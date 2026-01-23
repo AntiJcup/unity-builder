@@ -19,6 +19,7 @@ import SharedWorkspaceLocking from './services/core/shared-workspace-locking';
 import { FollowLogStreamService } from './services/core/follow-log-stream-service';
 import CloudRunnerResult from './services/core/cloud-runner-result';
 import CloudRunnerOptions from './options/cloud-runner-options';
+import ResourceTracking from './services/core/resource-tracking';
 
 class CloudRunner {
   public static Provider: ProviderInterface;
@@ -37,6 +38,8 @@ class CloudRunner {
     CloudRunnerLogger.setup();
     CloudRunnerLogger.log(`Setting up cloud runner`);
     CloudRunner.buildParameters = buildParameters;
+    ResourceTracking.logAllocationSummary('setup');
+    await ResourceTracking.logDiskUsageSnapshot('setup');
     if (CloudRunner.buildParameters.githubCheckId === ``) {
       CloudRunner.buildParameters.githubCheckId = await GitHub.createGitHubCheck(CloudRunner.buildParameters.buildGuid);
     }

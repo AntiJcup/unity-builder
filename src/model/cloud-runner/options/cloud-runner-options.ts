@@ -287,6 +287,10 @@ class CloudRunnerOptions {
     return CloudRunnerOptions.getInput('asyncCloudRunner') === 'true';
   }
 
+  public static get resourceTracking(): boolean {
+    return CloudRunnerOptions.getInput('resourceTracking') === 'true';
+  }
+
   public static get useLargePackages(): boolean {
     return CloudRunnerOptions.getInput(`useLargePackages`) === `true`;
   }

@@ -194,6 +194,10 @@ inputs:
     description:
       '[CloudRunner] Either local, k8s or aws can be used to run builds on a remote cluster. Additional parameters must
       be configured.'
+  resourceTracking:
+    default: 'false'
+    required: false
+    description: '[CloudRunner] Enable resource tracking logs for disk usage and allocation summaries.'
   containerCpu:
     default: ''
     required: false

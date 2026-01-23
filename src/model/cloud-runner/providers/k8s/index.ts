@@ -17,6 +17,7 @@ import { ProviderWorkflow } from '../provider-workflow';
 import { RemoteClientLogger } from '../../remote-client/remote-client-logger';
 import { KubernetesRole } from './kubernetes-role';
 import { CloudRunnerSystem } from '../../services/core/cloud-runner-system';
+import ResourceTracking from '../../services/core/resource-tracking';
 
 class Kubernetes implements ProviderInterface {
   public static Instance: Kubernetes;
@@ -137,6 +138,9 @@ class Kubernetes implements ProviderInterface {
   ): Promise<string> {
     try {
       CloudRunnerLogger.log('Cloud Runner K8s workflow!');
+      ResourceTracking.logAllocationSummary('k8s workflow');
+      await ResourceTracking.logDiskUsageSnapshot('k8s workflow (host)');
+      await ResourceTracking.logK3dNodeDiskUsage('k8s workflow (before job)');
 
       // Setup
       const id =

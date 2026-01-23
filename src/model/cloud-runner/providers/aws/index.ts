@@ -15,6 +15,7 @@ import { ProviderWorkflow } from '../provider-workflow';
 import { TaskService } from './services/task-service';
 import CloudRunnerOptions from '../../options/cloud-runner-options';
 import { AwsClientFactory } from './aws-client-factory';
+import ResourceTracking from '../../services/core/resource-tracking';
 
 class AWSBuildEnvironment implements ProviderInterface {
   private baseStackName: string;
@@ -90,6 +91,8 @@ class AWSBuildEnvironment implements ProviderInterface {
     secrets: CloudRunnerSecret[],
   ): Promise<string> {
     process.env.AWS_REGION = Input.region;
+    ResourceTracking.logAllocationSummary('aws workflow');
+    await ResourceTracking.logDiskUsageSnapshot('aws workflow (host)');
     AwsClientFactory.getECS();
     const CF = AwsClientFactory.getCloudFormation();
     AwsClientFactory.getKinesis();

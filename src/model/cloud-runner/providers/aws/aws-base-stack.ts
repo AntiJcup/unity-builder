@@ -58,18 +58,33 @@ export class AWSBaseStack {
     };
 
     const stacks = await CF.send(
-      new ListStacksCommand({ StackStatusFilter: ['UPDATE_COMPLETE', 'CREATE_COMPLETE', 'ROLLBACK_COMPLETE'] }),
+      new ListStacksCommand({
+        StackStatusFilter: ['CREATE_IN_PROGRESS', 'UPDATE_IN_PROGRESS', 'UPDATE_COMPLETE', 'CREATE_COMPLETE', 'ROLLBACK_COMPLETE'],
+      }),
     );
     const stackNames = stacks.StackSummaries?.map((x) => x.StackName) || [];
-    const stackExists: Boolean = stackNames.includes(baseStackName) || false;
+    const stackExists: boolean = stackNames.includes(baseStackName);
     const describeStack = async () => {
       return await CF.send(new DescribeStacksCommand(describeStackInput));
     };
     try {
       if (!stackExists) {
         CloudRunnerLogger.log(`${baseStackName} stack does not exist (${JSON.stringify(stackNames)})`);
-        await CF.send(new CreateStackCommand(createStackInput));
-        CloudRunnerLogger.log(`created stack (version: ${parametersHash})`);
+        let created = false;
+        try {
+          await CF.send(new CreateStackCommand(createStackInput));
+          created = true;
+        } catch (error: any) {
+          const message = `${error?.name ?? ''} ${error?.message ?? ''}`;
+          if (message.includes('AlreadyExistsException')) {
+            CloudRunnerLogger.log(`Base stack already exists, continuing with describe`);
+          } else {
+            throw error;
+          }
+        }
+        if (created) {
+          CloudRunnerLogger.log(`created stack (version: ${parametersHash})`);
+        }
       }
       const CFState = await describeStack();
       let stack = CFState.Stacks?.[0];

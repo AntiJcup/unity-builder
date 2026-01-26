@@ -23,6 +23,8 @@ env:
   DEBUG: true
   PROJECT_PATH: test-project
   USE_IL2CPP: false
+  # Increase CloudFormation stack wait time (GitHub Actions runners can be slow)
+  CLOUD_RUNNER_AWS_STACK_WAIT_TIME: 900
 
 jobs:
   cloud-runner-tests:
@@ -183,7 +185,6 @@ jobs:
             exit 1
           fi
       - run: yarn install --frozen-lockfile
-
       # ==========================================
       # K8S TESTS SECTION
       # ==========================================

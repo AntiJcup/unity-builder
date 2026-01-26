@@ -1,5 +1,4 @@
 import CloudRunnerLogger from '../../services/core/cloud-runner-logger';
-import CloudRunnerOptions from '../../options/cloud-runner-options';
 import * as core from '@actions/core';
 import {
   CloudFormation,
@@ -21,37 +20,14 @@ import {
 import { BaseStackFormation } from './cloud-formations/base-stack-formation';
 import crypto from 'node:crypto';
 
-const LOCALSTACK_ENDPOINT_PATTERN = /localstack|localhost|127\.0\.0\.1/i;
-const LOCALSTACK_WAIT_TIME_SECONDS = 600;
-const DEFAULT_STACK_WAIT_TIME_SECONDS = 200;
+const DEFAULT_STACK_WAIT_TIME_SECONDS = 600;
 
-function detectLocalStackEnvironment(): boolean {
-  const endpoints = [
-    process.env.AWS_ENDPOINT,
-    process.env.AWS_S3_ENDPOINT,
-    process.env.AWS_CLOUD_FORMATION_ENDPOINT,
-    process.env.AWS_ECS_ENDPOINT,
-    process.env.AWS_KINESIS_ENDPOINT,
-    process.env.AWS_CLOUD_WATCH_LOGS_ENDPOINT,
-    CloudRunnerOptions.awsEndpoint,
-    CloudRunnerOptions.awsS3Endpoint,
-    CloudRunnerOptions.awsCloudFormationEndpoint,
-    CloudRunnerOptions.awsEcsEndpoint,
-    CloudRunnerOptions.awsKinesisEndpoint,
-    CloudRunnerOptions.awsCloudWatchLogsEndpoint,
-  ]
-    .filter((endpoint) => endpoint !== undefined && endpoint !== '')
-    .join(' ');
-  return LOCALSTACK_ENDPOINT_PATTERN.test(endpoints);
-}
-
-function determineStackWaitTime(isLocalStack: boolean): number {
+function getStackWaitTime(): number {
   const overrideValue = Number(process.env.CLOUD_RUNNER_AWS_STACK_WAIT_TIME ?? '');
   if (!Number.isNaN(overrideValue) && overrideValue > 0) {
     return overrideValue;
   }
-
-  return isLocalStack ? LOCALSTACK_WAIT_TIME_SECONDS : DEFAULT_STACK_WAIT_TIME_SECONDS;
+  return DEFAULT_STACK_WAIT_TIME_SECONDS;
 }
 
 export class AWSBaseStack {
@@ -62,14 +38,7 @@ export class AWSBaseStack {
 
   async setupBaseStack(CF: CloudFormation) {
     const baseStackName = this.baseStackName;
-    const isLocalStack = detectLocalStackEnvironment();
-    const stackWaitTimeSeconds = determineStackWaitTime(isLocalStack);
-
-    if (isLocalStack) {
-      CloudRunnerLogger.log(
-        `LocalStack endpoints detected; will wait up to ${stackWaitTimeSeconds}s for CloudFormation transitions`,
-      );
-    }
+    const stackWaitTimeSeconds = getStackWaitTime();
 
     const baseStack = BaseStackFormation.formation;
 
@@ -101,7 +70,13 @@ export class AWSBaseStack {
 
     const stacks = await CF.send(
       new ListStacksCommand({
-        StackStatusFilter: ['CREATE_IN_PROGRESS', 'UPDATE_IN_PROGRESS', 'UPDATE_COMPLETE', 'CREATE_COMPLETE', 'ROLLBACK_COMPLETE'],
+        StackStatusFilter: [
+          'CREATE_IN_PROGRESS',
+          'UPDATE_IN_PROGRESS',
+          'UPDATE_COMPLETE',
+          'CREATE_COMPLETE',
+          'ROLLBACK_COMPLETE',
+        ],
       }),
     );
     const stackNames = stacks.StackSummaries?.map((x) => x.StackName) || [];

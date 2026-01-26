@@ -174,9 +174,7 @@ class Kubernetes implements ProviderInterface {
 
           for (const NODE of K3D_NODE_CONTAINERS) {
             // Remove all stopped containers (this frees runtime space but keeps images)
-            cleanupCommands.push(
-              `docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`,
-            );
+            cleanupCommands.push(`docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`);
             // Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
             // This is safe because we explicitly exclude Unity images from deletion
             cleanupCommands.push(

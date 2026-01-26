@@ -27,6 +27,8 @@ env:
   DEBUG: true
   PROJECT_PATH: test-project
   USE_IL2CPP: false
+  # Increase CloudFormation stack wait time (GitHub Actions runners can be slow)
+  CLOUD_RUNNER_AWS_STACK_WAIT_TIME: 900
 
 jobs:
   tests:

@@ -17,6 +17,16 @@ import CloudRunnerOptions from '../../options/cloud-runner-options';
 import { AwsClientFactory } from './aws-client-factory';
 import ResourceTracking from '../../services/core/resource-tracking';
 
+const DEFAULT_STACK_WAIT_TIME_SECONDS = 600;
+
+function getStackWaitTime(): number {
+  const overrideValue = Number(process.env.CLOUD_RUNNER_AWS_STACK_WAIT_TIME ?? '');
+  if (!Number.isNaN(overrideValue) && overrideValue > 0) {
+    return overrideValue;
+  }
+  return DEFAULT_STACK_WAIT_TIME_SECONDS;
+}
+
 class AWSBuildEnvironment implements ProviderInterface {
   private baseStackName: string;
 
@@ -133,7 +143,8 @@ class AWSBuildEnvironment implements ProviderInterface {
   }
 
   async cleanupResources(CF: CloudFormation, taskDef: CloudRunnerAWSTaskDef) {
-    CloudRunnerLogger.log('Cleanup starting');
+    const stackWaitTimeSeconds = getStackWaitTime();
+    CloudRunnerLogger.log(`Cleanup starting (waiting up to ${stackWaitTimeSeconds}s for stack deletion)`);
     await CF.send(new DeleteStackCommand({ StackName: taskDef.taskDefStackName }));
     if (CloudRunnerOptions.useCleanupCron) {
       await CF.send(new DeleteStackCommand({ StackName: `${taskDef.taskDefStackName}-cleanup` }));
@@ -142,7 +153,7 @@ class AWSBuildEnvironment implements ProviderInterface {
     await waitUntilStackDeleteComplete(
       {
         client: CF,
-        maxWaitTime: 200,
+        maxWaitTime: stackWaitTimeSeconds,
       },
       {
         StackName: taskDef.taskDefStackName,
@@ -151,7 +162,7 @@ class AWSBuildEnvironment implements ProviderInterface {
     await waitUntilStackDeleteComplete(
       {
         client: CF,
-        maxWaitTime: 200,
+        maxWaitTime: stackWaitTimeSeconds,
       },
       {
         StackName: `${taskDef.taskDefStackName}-cleanup`,

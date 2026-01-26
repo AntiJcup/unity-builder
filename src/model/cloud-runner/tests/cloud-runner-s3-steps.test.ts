@@ -44,7 +44,7 @@ describe('Cloud Runner pre-built S3 steps', () => {
       it('Run build and prebuilt s3 cache pull, cache push and upload build', async () => {
         const cacheKey = `test-case-${uuidv4()}`;
         const buildGuid = `test-build-${uuidv4()}`;
-        
+
         // Use customJob to run only S3 hooks without a full Unity build
         // This is a quick validation test for S3 operations, not a full build test
         const overrides = {

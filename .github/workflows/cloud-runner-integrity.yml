@@ -35,7 +35,8 @@ jobs:
       AWS_FORCE_PROVIDER: aws
       RESOURCE_TRACKING: 'true'
       # LocalStack container name on shared Docker network (for K8s pods to access)
-      LOCALSTACK_HOST: localstack-main
+      # Note: Using K8S_LOCALSTACK_HOST instead of LOCALSTACK_HOST to avoid conflict with awslocal CLI
+      K8S_LOCALSTACK_HOST: localstack-main
     steps:
       # ==========================================
       # SETUP SECTION

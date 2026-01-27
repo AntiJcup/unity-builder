@@ -35,8 +35,9 @@ class KubernetesJobSpecFactory {
     ]);
 
     // Determine the LocalStack hostname to use for K8s pods
-    // Priority: LOCALSTACK_HOST env var > localstack-main (container name on shared network)
-    const localstackHost = process.env['LOCALSTACK_HOST'] || 'localstack-main';
+    // Priority: K8S_LOCALSTACK_HOST env var > localstack-main (container name on shared network)
+    // Note: Using K8S_LOCALSTACK_HOST instead of LOCALSTACK_HOST to avoid conflict with awslocal CLI
+    const localstackHost = process.env['K8S_LOCALSTACK_HOST'] || 'localstack-main';
     CloudRunnerLogger.log(`K8s pods will use LocalStack host: ${localstackHost}`);
 
     const adjustedEnvironment = environment.map((x) => {

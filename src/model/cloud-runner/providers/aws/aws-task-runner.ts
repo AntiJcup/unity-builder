@@ -15,6 +15,44 @@ import { AwsClientFactory } from './aws-client-factory';
 
 class AWSTaskRunner {
   private static readonly encodedUnderscore = `$252F`;
+
+  /**
+   * Transform localhost endpoints to host.docker.internal for container environments.
+   * When LocalStack is used, ECS tasks run in Docker containers that need to reach
+   * LocalStack on the host machine via host.docker.internal.
+   */
+  private static transformEndpointsForContainer(
+    environment: CloudRunnerEnvironmentVariable[],
+  ): CloudRunnerEnvironmentVariable[] {
+    const endpointEnvironmentNames = new Set([
+      'AWS_S3_ENDPOINT',
+      'AWS_ENDPOINT',
+      'AWS_CLOUD_FORMATION_ENDPOINT',
+      'AWS_ECS_ENDPOINT',
+      'AWS_KINESIS_ENDPOINT',
+      'AWS_CLOUD_WATCH_LOGS_ENDPOINT',
+      'INPUT_AWSS3ENDPOINT',
+      'INPUT_AWSENDPOINT',
+    ]);
+
+    return environment.map((x) => {
+      let value = x.value;
+      if (
+        typeof value === 'string' &&
+        endpointEnvironmentNames.has(x.name) &&
+        (value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'))
+      ) {
+        // Replace localhost with host.docker.internal so ECS containers can access host services
+        value = value
+          .replace('http://localhost', 'http://host.docker.internal')
+          .replace('http://127.0.0.1', 'http://host.docker.internal');
+        CloudRunnerLogger.log(`AWS TaskRunner: Replaced localhost with host.docker.internal for ${x.name}: ${value}`);
+      }
+
+      return { name: x.name, value };
+    });
+  }
+
   static async runTask(
     taskDef: CloudRunnerAWSTaskDef,
     environment: CloudRunnerEnvironmentVariable[],
@@ -32,6 +70,9 @@ class AWSTaskRunner {
     const streamName =
       taskDef.taskDefResources?.find((x) => x.LogicalResourceId === 'KinesisStream')?.PhysicalResourceId || '';
 
+    // Transform localhost endpoints for container environment
+    const transformedEnvironment = AWSTaskRunner.transformEndpointsForContainer(environment);
+
     const runParameters = {
       cluster,
       taskDefinition,
@@ -40,7 +81,7 @@ class AWSTaskRunner {
         containerOverrides: [
           {
             name: taskDef.taskDefStackName,
-            environment,
+            environment: transformedEnvironment,
             command: ['-c', CommandHookService.ApplyHooksToCommands(commands, CloudRunner.buildParameters)],
           },
         ],

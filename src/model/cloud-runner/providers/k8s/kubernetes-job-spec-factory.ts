@@ -4,6 +4,7 @@ import { CommandHookService } from '../../services/hooks/command-hook-service';
 import CloudRunnerEnvironmentVariable from '../../options/cloud-runner-environment-variable';
 import CloudRunnerSecret from '../../options/cloud-runner-secret';
 import CloudRunner from '../../cloud-runner';
+import CloudRunnerLogger from '../../services/core/cloud-runner-logger';
 
 class KubernetesJobSpecFactory {
   static getJobSpec(
@@ -32,6 +33,12 @@ class KubernetesJobSpecFactory {
       'INPUT_AWSS3ENDPOINT',
       'INPUT_AWSENDPOINT',
     ]);
+
+    // Determine the LocalStack hostname to use for K8s pods
+    // Priority: LOCALSTACK_HOST env var > localstack-main (container name on shared network)
+    const localstackHost = process.env['LOCALSTACK_HOST'] || 'localstack-main';
+    CloudRunnerLogger.log(`K8s pods will use LocalStack host: ${localstackHost}`);
+
     const adjustedEnvironment = environment.map((x) => {
       let value = x.value;
       if (
@@ -39,11 +46,12 @@ class KubernetesJobSpecFactory {
         endpointEnvironmentNames.has(x.name) &&
         (value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'))
       ) {
-        // Replace localhost with host.k3d.internal so pods can access host services
-        // This simulates accessing external services (like real AWS S3)
+        // Replace localhost with the LocalStack container hostname
+        // When k3d and LocalStack are on the same Docker network, pods can reach LocalStack by container name
         value = value
-          .replace('http://localhost', 'http://host.k3d.internal')
-          .replace('http://127.0.0.1', 'http://host.k3d.internal');
+          .replace('http://localhost', `http://${localstackHost}`)
+          .replace('http://127.0.0.1', `http://${localstackHost}`);
+        CloudRunnerLogger.log(`Replaced localhost with ${localstackHost} for ${x.name}: ${value}`);
       }
 
       return { name: x.name, value } as CloudRunnerEnvironmentVariable;

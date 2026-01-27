@@ -36,11 +36,16 @@ describe('Cloud Runner Caching', () => {
 
       // For AWS LocalStack tests, explicitly set provider strategy to 'aws'
       // This ensures we use AWS LocalStack instead of defaulting to local-docker
-      if (process.env.AWS_S3_ENDPOINT && process.env.AWS_S3_ENDPOINT.includes('localhost')) {
+      // But don't override if k8s provider is already set
+      if (
+        process.env.AWS_S3_ENDPOINT &&
+        process.env.AWS_S3_ENDPOINT.includes('localhost') &&
+        CloudRunnerOptions.providerStrategy !== 'k8s'
+      ) {
         overrides.providerStrategy = 'aws';
         overrides.containerHookFiles += `,aws-s3-pull-cache,aws-s3-upload-cache`;
       }
-      if (CloudRunnerOptions.providerStrategy === `k8s` || overrides.providerStrategy === `k8s`) {
+      if (CloudRunnerOptions.providerStrategy === `k8s`) {
         overrides.containerHookFiles += `,aws-s3-pull-cache,aws-s3-upload-cache`;
       }
       const buildParameter = await CreateParameters(overrides);

@@ -58,9 +58,8 @@ jobs:
           echo "Initial disk space cleanup..."
           echo "Current disk usage:"
           df -h
-          # Clean up any leftover k3d clusters/images from previous runs
+          # Clean up any leftover k3d clusters from previous runs
           k3d cluster delete unity-builder || true
-          k3d image delete --all || true
           # Stop any existing LocalStack container
           docker stop localstack-main 2>/dev/null || true
           docker rm localstack-main 2>/dev/null || true
@@ -549,7 +548,6 @@ jobs:
         run: |
           echo "Deleting k3d cluster to free disk space..."
           k3d cluster delete unity-builder || true
-          k3d image delete --all || true
           docker system prune -af --volumes || true
           echo "Disk usage after k3d deletion:"
           df -h

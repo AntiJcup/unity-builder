@@ -1,5 +1,13 @@
 # Provider Loader Dynamic Imports
 
+## What is a Provider?
+
+A **provider** is a pluggable backend that Cloud Runner uses to run builds and workflows. Examples include **AWS**, **Kubernetes**, or local execution. Each provider implements the [ProviderInterface](https://github.com/game-ci/unity-builder/blob/main/src/model/cloud-runner/providers/provider-interface.ts), which defines the common lifecycle methods (setup, run, cleanup, garbage collection, etc.).
+
+This abstraction makes Cloud Runner flexible: you can switch execution environments or add your own provider (via npm package, GitHub repo, or local path) without changing the rest of your pipeline.
+
+## Dynamic Provider Loading
+
 The provider loader now supports dynamic loading of providers from multiple sources including local file paths, GitHub repositories, and NPM packages.
 
 ## Features
@@ -207,7 +215,7 @@ The provider loader can be configured through environment variables:
 
 ## Best Practices
 
-1. **Use specific branches or versions**: Always specify the branch or specific tag when loading from GitHub
+1. **Use specific branches or tags**: Always specify the branch or specific tag when loading from GitHub
 2. **Implement proper error handling**: Wrap provider loading in try-catch blocks
 3. **Clean up regularly**: Use the cleanup utility to manage cache size
 4. **Test locally first**: Test providers locally before deploying

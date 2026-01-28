@@ -831,6 +831,57 @@ jobs:
           df -h
 
       # ==========================================
+      # RCLONE TESTS SECTION (using LocalStack S3 as backend)
+      # ==========================================
+      - name: Install and configure rclone with LocalStack S3
+        run: |
+          echo "Installing rclone..."
+          curl https://rclone.org/install.sh | sudo bash
+          rclone version
+
+          echo "Configuring rclone to use LocalStack S3..."
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << 'EOF'
+          [localstack-s3]
+          type = s3
+          provider = Other
+          env_auth = false
+          access_key_id = test
+          secret_access_key = test
+          endpoint = http://localhost:4566
+          acl = private
+          force_path_style = true
+          EOF
+
+          echo "Testing rclone configuration..."
+          rclone lsd localstack-s3: || echo "No buckets yet (expected)"
+          rclone ls localstack-s3:game-ci-team-pipelines || echo "Bucket may be empty"
+          echo "Rclone configured successfully"
+      - name: Run cloud-runner-rclone-steps test (rclone with LocalStack S3)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-rclone-steps" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneLinux64
+          cloudRunnerTests: true
+          versioning: None
+          PROVIDER_STRATEGY: local-docker
+          RCLONE_REMOTE: 'localstack-s3:game-ci-team-pipelines'
+          rcloneRemote: 'localstack-s3:game-ci-team-pipelines'
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space after rclone tests
+        run: |
+          echo "Cleaning up disk space after rclone tests..."
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          echo "Disk usage:"
+          df -h
+
+      # ==========================================
       # LOCAL DOCKER TESTS SECTION
       # ==========================================
       - name: Clean up disk space before local-docker tests

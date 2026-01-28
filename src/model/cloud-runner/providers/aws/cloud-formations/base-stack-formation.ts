@@ -52,6 +52,18 @@ Resources:
     Properties:
       BucketName: !Ref EnvironmentName
 
+  EFSServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'efs-server-endpoints'
+      GroupDescription: Which client ip addrs are allowed to access EFS server
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ContainerSecurityGroup
+          #CidrIp: !FindInMap ['SubnetConfig', 'VPC', 'CIDR']
   # A security group for the containers we will run in Fargate.
   # Rules are added to this security group based on what ingress you
   # add for the cluster.
@@ -287,7 +299,48 @@ Resources:
                   - 'kinesis:PutRecord'
                 Resource: '*'
 
+  #####################EFS#####################
+  EfsFileStorage:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      BackupPolicy:
+        Status: ENABLED
+      PerformanceMode: maxIO
+      Encrypted: false
+
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Action:
+              - 'elasticfilesystem:ClientMount'
+              - 'elasticfilesystem:ClientWrite'
+              - 'elasticfilesystem:ClientRootAccess'
+            Principal:
+              AWS: '*'
+
+  MountTargetResource1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileStorage
+      SubnetId: !Ref PublicSubnetOne
+      SecurityGroups:
+        - !Ref EFSServerSecurityGroup
+
+  MountTargetResource2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileStorage
+      SubnetId: !Ref PublicSubnetTwo
+      SecurityGroups:
+        - !Ref EFSServerSecurityGroup
+
 Outputs:
+  EfsFileStorageId:
+    Description: 'The connection endpoint for the database.'
+    Value: !Ref EfsFileStorage
+    Export:
+      Name: !Sub ${'${EnvironmentName}'}:EfsFileStorageId
   ClusterName:
     Description: The name of the ECS cluster
     Value: !Ref 'ECSCluster'

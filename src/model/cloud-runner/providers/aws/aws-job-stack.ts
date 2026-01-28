@@ -126,6 +126,10 @@ export class AWSJobStack {
         ParameterKey: 'WorkingDirectory',
         ParameterValue: workingdir,
       },
+      {
+        ParameterKey: 'EFSMountDirectory',
+        ParameterValue: mountdir,
+      },
       ...secretsMappedToCloudFormationParameters,
     ];
     CloudRunnerLogger.log(

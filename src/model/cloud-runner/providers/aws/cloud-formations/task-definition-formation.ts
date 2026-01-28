@@ -54,9 +54,9 @@ Parameters:
     Description: >-
       (Optional) An IAM role to give the service's containers if the code within
       needs to access other AWS resources like S3 buckets, DynamoDB tables, etc
-  WorkDir:
+  EFSMountDirectory:
     Type: String
-    Default: '/data'
+    Default: '/efsdata'
   # template secrets p1 - input
 Mappings:
   SubnetConfig:
@@ -90,6 +90,12 @@ Resources:
       Cpu: !Ref ContainerCpu
       Memory: !Ref ContainerMemory
       NetworkMode: awsvpc
+      Volumes:
+        - Name: efs-data
+          EFSVolumeConfiguration:
+            FilesystemId:
+              'Fn::ImportValue': !Sub '${'${EnvironmentName}'}:EfsFileStorageId'
+            TransitEncryption: DISABLED
       RequiresCompatibilities:
         - FARGATE
       ExecutionRoleArn:
@@ -117,6 +123,10 @@ Resources:
             - Name: ALLOW_EMPTY_PASSWORD
               Value: 'yes'
             # template - env vars
+          MountPoints:
+            - SourceVolume: efs-data
+              ContainerPath: !Ref EFSMountDirectory
+              ReadOnly: false
           Secrets:
             # template secrets p3 - container def
           LogConfiguration:

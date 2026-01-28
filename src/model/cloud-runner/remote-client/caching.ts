@@ -110,10 +110,12 @@ export class Caching {
             await CloudRunnerSystem.Run(
               `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
             );
+
             // Try with sudo if available
             await CloudRunnerSystem.Run(
               `sudo find ${cacheParent} -name "*.tar*" -type f -mmin +360 -delete 2>/dev/null || true`,
             );
+
             // As last resort, try to remove files one by one
             await CloudRunnerSystem.Run(
               `find ${cacheParent} -name "*.tar*" -type f -mmin +360 -exec rm -f {} + 2>/dev/null || true`,
@@ -125,6 +127,7 @@ export class Caching {
             // If disk is still very high (>95%), be even more aggressive
             if (diskUsagePercent > 95) {
               CloudRunnerLogger.log(`Disk usage is very high (${diskUsagePercent}%), performing aggressive cleanup...`);
+
               // Remove files older than 1 hour
               await CloudRunnerSystem.Run(
                 `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
@@ -156,6 +159,7 @@ export class Caching {
               const message = `Cannot create cache archive: disk is still at ${diskUsageAfterCleanup}% after cleanup. Tar operation would hang. Skipping cache push; please free up disk space manually if this persists.`;
               CloudRunnerLogger.logWarning(message);
               RemoteClientLogger.log(message);
+
               // Restore working directory before early return
               process.chdir(`${startPath}`);
 
@@ -187,6 +191,7 @@ export class Caching {
         try {
           // Check if timeout command is available
           await CloudRunnerSystem.Run(`which timeout > /dev/null 2>&1`, true, true);
+
           // Use timeout if available (600 seconds = 10 minutes)
           tarCommandToRun = `timeout 600 ${tarCommand}`;
         } catch {
@@ -224,6 +229,7 @@ export class Caching {
               await CloudRunnerSystem.Run(
                 `sudo find ${cacheParent} -name "*.tar*" -type f -mmin +60 -delete 2>/dev/null || true`,
               );
+
               // As last resort, try to remove files one by one
               await CloudRunnerSystem.Run(
                 `find ${cacheParent} -name "*.tar*" -type f -mmin +60 -exec rm -f {} + 2>/dev/null || true`,
@@ -239,6 +245,7 @@ export class Caching {
                 await CloudRunnerSystem.Run(
                   `chmod -R u+w ${cacheRoot} 2>/dev/null || chown -R $(whoami) ${cacheRoot} 2>/dev/null || true`,
                 );
+
                 // Remove cache entries older than 30 minutes
                 await CloudRunnerSystem.Run(
                   `find ${cacheRoot} -name "*.tar*" -type f -mmin +30 -delete 2>/dev/null || true`,
@@ -365,8 +372,10 @@ export class Caching {
           const message = `Disk is at ${diskUsagePercent}% - skipping cache extraction to prevent hang. Cache may be incomplete or corrupted.`;
           CloudRunnerLogger.logWarning(message);
           RemoteClientLogger.logWarning(message);
+
           // Continue without cache - build will proceed without cached Library
           process.chdir(startPath);
+
           return;
         }
 
@@ -377,12 +386,14 @@ export class Caching {
           await CloudRunnerSystem.Run(
             `tar -tf ${cacheSelection}.tar${compressionSuffix} > /dev/null 2>&1 || (echo "Tar file validation failed" && exit 1)`,
           );
-        } catch (validationError) {
+        } catch {
           const message = `Cache archive ${cacheSelection}.tar${compressionSuffix} appears to be corrupted or incomplete. Skipping cache extraction.`;
           CloudRunnerLogger.logWarning(message);
           RemoteClientLogger.logWarning(message);
+
           // Continue without cache - build will proceed without cached Library
           process.chdir(startPath);
+
           return;
         }
 
@@ -394,6 +405,7 @@ export class Caching {
         // Extract with timeout to prevent infinite hangs
         try {
           let tarExtractCommand = `tar -xf ${cacheSelection}.tar${compressionSuffix} -C ${fullResultsFolder}`;
+
           // Add timeout if available (600 seconds = 10 minutes)
           try {
             await CloudRunnerSystem.Run(`which timeout > /dev/null 2>&1`, true, true);
@@ -405,6 +417,7 @@ export class Caching {
           await CloudRunnerSystem.Run(tarExtractCommand);
         } catch (extractError: any) {
           const errorMessage = extractError?.message || extractError?.toString() || '';
+
           // Check for common tar errors that indicate corruption or disk issues
           if (
             errorMessage.includes('Unexpected EOF') ||
@@ -416,10 +429,13 @@ export class Caching {
             const message = `Cache extraction failed (likely due to corrupted archive or disk space): ${errorMessage}. Continuing without cache.`;
             CloudRunnerLogger.logWarning(message);
             RemoteClientLogger.logWarning(message);
+
             // Continue without cache - build will proceed without cached Library
             process.chdir(startPath);
+
             return;
           }
+
           // Re-throw other errors
           throw extractError;
         }

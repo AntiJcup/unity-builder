@@ -306,9 +306,11 @@ export class RemoteClient {
     await CloudRunnerSystem.Run(`git config --global filter.lfs.smudge "git-lfs smudge --skip -- %f"`);
     await CloudRunnerSystem.Run(`git config --global filter.lfs.process "git-lfs filter-process --skip"`);
     try {
-      const depthArg = CloudRunnerOptions.cloneDepth !== '0' ? `--depth ${CloudRunnerOptions.cloneDepth}` : '';
+      const depthArgument = CloudRunnerOptions.cloneDepth !== '0' ? `--depth ${CloudRunnerOptions.cloneDepth}` : '';
       await CloudRunnerSystem.Run(
-        `git clone ${depthArg} ${CloudRunnerFolders.targetBuildRepoUrl} ${path.basename(CloudRunnerFolders.repoPathAbsolute)}`.trim(),
+        `git clone ${depthArgument} ${CloudRunnerFolders.targetBuildRepoUrl} ${path.basename(
+          CloudRunnerFolders.repoPathAbsolute,
+        )}`.trim(),
       );
     } catch (error: any) {
       throw error;

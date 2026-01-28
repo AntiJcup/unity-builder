@@ -89,6 +89,7 @@ class KubernetesStorage {
 
       if (shouldSkipWait) {
         CloudRunnerLogger.log(`Skipping PVC wait - will bind when pod is created`);
+
         return;
       }
 
@@ -123,16 +124,18 @@ class KubernetesStorage {
 
                 // Check if event indicates WaitForFirstConsumer
                 const waitForConsumerEvent = pvcEvents.find(
-                  (e) => e.reason === 'WaitForFirstConsumer' || e.message?.includes('waiting for first consumer'),
+                  (event) =>
+                    event.reason === 'WaitForFirstConsumer' || event.message?.includes('waiting for first consumer'),
                 );
                 if (waitForConsumerEvent) {
                   CloudRunnerLogger.log(
                     `PVC is waiting for first consumer. This is normal for WaitForFirstConsumer storage classes. Proceeding without waiting.`,
                   );
+
                   return true; // Exit wait loop - PVC will bind when pod is created
                 }
               }
-            } catch (eventError) {
+            } catch {
               // Ignore event fetch errors
             }
           }
@@ -169,7 +172,7 @@ class KubernetesStorage {
               type: x.type || '',
               count: x.count || 0,
             }));
-        } catch (eventError) {
+        } catch {
           // Ignore event fetch errors
         }
 
@@ -189,11 +192,10 @@ class KubernetesStorage {
                 sc.body.provisioner || 'unknown'
               }`;
             } catch (scError: any) {
-              if (scError.statusCode === 404) {
-                storageClassInfo = `StorageClass "${storageClassName}" does NOT exist! This is likely why the PVC is stuck in Pending.`;
-              } else {
-                storageClassInfo = `Failed to check StorageClass "${storageClassName}": ${scError.message || scError}`;
-              }
+              storageClassInfo =
+                scError.statusCode === 404
+                  ? `StorageClass "${storageClassName}" does NOT exist! This is likely why the PVC is stuck in Pending.`
+                  : `Failed to check StorageClass "${storageClassName}": ${scError.message || scError}`;
             }
           }
         } catch (scCheckError) {

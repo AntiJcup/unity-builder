@@ -63,7 +63,7 @@ describe('Cloud Runner Kubernetes', () => {
         throw new Error(
           `Test failed: Pod was evicted due to resource constraints (ephemeral-storage). ` +
             `This indicates the test environment doesn't have enough disk space. ` +
-            `Results: ${results.substring(0, 500)}`,
+            `Results: ${results.slice(0, 500)}`,
         );
       }
 
@@ -83,7 +83,7 @@ describe('Cloud Runner Kubernetes', () => {
         throw new Error(
           `Build did not complete successfully: ${incompleteLogsMessage}\n` +
             `This indicates the pod was evicted or killed before post-build completed.\n` +
-            `Build results:\n${results.substring(0, 500)}`,
+            `Build results:\n${results.slice(0, 500)}`,
         );
       } else {
         // Normal case - logs are complete

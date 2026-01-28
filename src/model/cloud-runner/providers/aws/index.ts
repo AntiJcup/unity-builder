@@ -24,6 +24,7 @@ function getStackWaitTime(): number {
   if (!Number.isNaN(overrideValue) && overrideValue > 0) {
     return overrideValue;
   }
+
   return DEFAULT_STACK_WAIT_TIME_SECONDS;
 }
 

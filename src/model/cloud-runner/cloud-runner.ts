@@ -28,6 +28,7 @@ class CloudRunner {
   private static cloudRunnerEnvironmentVariables: CloudRunnerEnvironmentVariable[];
   static lockedWorkspace: string = ``;
   public static readonly retainedWorkspacePrefix: string = `retained-workspace`;
+
   // When true, validates AWS CloudFormation templates even when using local-docker execution
   // This is set by AWS_FORCE_PROVIDER=aws-local mode
   public static validateAwsTemplates: boolean = false;
@@ -132,6 +133,7 @@ class CloudRunner {
         break;
       case 'aws':
         CloudRunner.Provider = new AwsBuildPlatform(CloudRunner.buildParameters);
+
         // Validate that AWS provider is actually being used when expected
         if (isLocalStack && forceAwsProvider) {
           CloudRunnerLogger.log('✓ AWS provider initialized with LocalStack - AWS functionality will be validated');

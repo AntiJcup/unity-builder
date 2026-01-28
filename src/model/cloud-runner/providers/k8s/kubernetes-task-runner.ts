@@ -38,6 +38,7 @@ class KubernetesTaskRunner {
         const lowerChunk = outputChunk.toLowerCase();
         if (lowerChunk.includes('unable to retrieve container logs')) {
           CloudRunnerLogger.log(`Filtered kubectl error: ${outputChunk.trim()}`);
+
           return;
         }
 
@@ -46,8 +47,8 @@ class KubernetesTaskRunner {
         // split output chunk and handle per line
         for (const chunk of outputChunk.split(`\n`)) {
           // Skip empty chunks and kubectl error messages (case-insensitive)
-          const lowerChunk = chunk.toLowerCase();
-          if (chunk.trim() && !lowerChunk.includes('unable to retrieve container logs')) {
+          const lowerCaseChunk = chunk.toLowerCase();
+          if (chunk.trim() && !lowerCaseChunk.includes('unable to retrieve container logs')) {
             ({ shouldReadLogs, shouldCleanup, output } = FollowLogStreamService.handleIteration(
               chunk,
               shouldReadLogs,
@@ -66,6 +67,7 @@ class KubernetesTaskRunner {
           true,
           callback,
         );
+
         // Reset failure count on success
         kubectlLogsFailedCount = 0;
       } catch (error: any) {
@@ -105,6 +107,7 @@ class KubernetesTaskRunner {
                 // Pod is terminated, try to create a temporary pod to read from the PVC
                 // First, check if we can still access the pod's filesystem
                 CloudRunnerLogger.log(`Pod is terminated, attempting to read log file via temporary pod...`);
+
                 // For terminated pods, we might not be able to exec, so we'll skip this fallback
                 // and rely on the log file being written to the PVC (if mounted)
                 CloudRunnerLogger.logWarning(`Cannot read log file from terminated pod via exec`);
@@ -112,6 +115,7 @@ class KubernetesTaskRunner {
 
               if (logFileContent && logFileContent.trim()) {
                 CloudRunnerLogger.log(`Successfully read log file from pod (${logFileContent.length} chars)`);
+
                 // Process the log file content line by line
                 for (const line of logFileContent.split(`\n`)) {
                   const lowerLine = line.toLowerCase();
@@ -132,12 +136,14 @@ class KubernetesTaskRunner {
                 }
               } else {
                 CloudRunnerLogger.logWarning(`Log file read returned empty content, continuing with available logs`);
+
                 // If we can't read the log file, break out of the loop to return whatever logs we have
                 // This prevents infinite retries when kubectl logs consistently fails
                 break;
               }
             } catch (execError: any) {
               CloudRunnerLogger.logWarning(`Failed to read log file from pod: ${execError}`);
+
               // If we've exhausted all options, break to return whatever logs we have
               break;
             }
@@ -220,6 +226,7 @@ class KubernetesTaskRunner {
 
     if (needsFallback) {
       CloudRunnerLogger.log('Output is empty, attempting aggressive log collection fallback...');
+
       // Give the pod a moment to finish writing logs before we try to read them
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
@@ -251,11 +258,14 @@ class KubernetesTaskRunner {
           const attempts = [
             // For terminated pods, try --previous first
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+
             // Try current container
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /home/job-log.txt 2>/dev/null || echo ""`,
+
             // Try reading from PVC (/data) in case log was copied there
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} --previous -- cat /data/job-log.txt 2>/dev/null || echo ""`,
             `kubectl exec ${podName} -c ${containerName} -n ${namespace} -- cat /data/job-log.txt 2>/dev/null || echo ""`,
+
             // Try kubectl logs as fallback (might capture stdout even if exec fails)
             `kubectl logs ${podName} -c ${containerName} -n ${namespace} --previous 2>/dev/null || echo ""`,
             `kubectl logs ${podName} -c ${containerName} -n ${namespace} 2>/dev/null || echo ""`,
@@ -268,18 +278,19 @@ class KubernetesTaskRunner {
               break;
             }
             try {
-              CloudRunnerLogger.log(`Trying fallback method: ${attempt.substring(0, 80)}...`);
+              CloudRunnerLogger.log(`Trying fallback method: ${attempt.slice(0, 80)}...`);
               const result = await CloudRunnerSystem.Run(attempt, true, true);
               if (result && result.trim()) {
                 // Prefer content that has "Collected Logs" over content that doesn't
                 if (!logFileContent || !logFileContent.includes('Collected Logs')) {
                   logFileContent = result;
                   CloudRunnerLogger.log(
-                    `Successfully read logs using fallback method (${logFileContent.length} chars): ${attempt.substring(
+                    `Successfully read logs using fallback method (${logFileContent.length} chars): ${attempt.slice(
                       0,
                       50,
                     )}...`,
                   );
+
                   // If this content has "Collected Logs", we're done
                   if (logFileContent.includes('Collected Logs')) {
                     CloudRunnerLogger.log('Fallback method successfully captured "Collected Logs".');
@@ -289,14 +300,13 @@ class KubernetesTaskRunner {
                   CloudRunnerLogger.log(`Skipping this result - already have content with "Collected Logs".`);
                 }
               } else {
-                CloudRunnerLogger.log(`Fallback method returned empty result: ${attempt.substring(0, 50)}...`);
+                CloudRunnerLogger.log(`Fallback method returned empty result: ${attempt.slice(0, 50)}...`);
               }
             } catch (attemptError: any) {
               CloudRunnerLogger.log(
-                `Fallback method failed: ${attempt.substring(0, 50)}... Error: ${
-                  attemptError?.message || attemptError
-                }`,
+                `Fallback method failed: ${attempt.slice(0, 50)}... Error: ${attemptError?.message || attemptError}`,
               );
+
               // Continue to next attempt
             }
           }
@@ -311,12 +321,15 @@ class KubernetesTaskRunner {
             CloudRunnerLogger.log(
               `Read log file from pod as fallback (${logFileContent.length} chars) to capture missing messages`,
             );
+
             // Get the lines we already have in output to avoid duplicates
             const existingLines = new Set(output.split('\n').map((line) => line.trim()));
+
             // Process the log file content line by line and add missing lines
             for (const line of logFileContent.split(`\n`)) {
               const trimmedLine = line.trim();
               const lowerLine = trimmedLine.toLowerCase();
+
               // Skip empty lines, kubectl errors, and lines we already have
               if (
                 trimmedLine &&
@@ -338,6 +351,7 @@ class KubernetesTaskRunner {
           CloudRunnerLogger.logWarning(
             `Could not read log file from pod as fallback: ${logFileError?.message || logFileError}`,
           );
+
           // Continue with existing output - this is a best-effort fallback
         }
       }
@@ -348,6 +362,7 @@ class KubernetesTaskRunner {
         CloudRunnerLogger.logWarning(
           'Could not retrieve "Collected Logs" from pod after all attempts. Pod may have been killed before logs were written.',
         );
+
         // Add a minimal message so BuildResults is not completely empty
         // This helps with debugging and prevents test failures due to empty results
         if (output.trim().length === 0) {
@@ -362,10 +377,12 @@ class KubernetesTaskRunner {
       CloudRunnerLogger.logWarning(
         `Error checking pod status for log file fallback: ${fallbackError?.message || fallbackError}`,
       );
+
       // If output is empty and we hit an error, still add a message so BuildResults isn't empty
       if (needsFallback && output.trim().length === 0) {
         output = `Error retrieving logs: ${fallbackError?.message || fallbackError}\n`;
       }
+
       // Continue with existing output - this is a best-effort fallback
     }
 
@@ -460,14 +477,16 @@ class KubernetesTaskRunner {
               if (podEvents.length > 0) {
                 message += `\nRecent Events:\n${JSON.stringify(podEvents.slice(-5), undefined, 2)}`;
               }
-            } catch (eventError) {
+            } catch {
               // Ignore event fetch errors
             }
 
             CloudRunnerLogger.logWarning(message);
+
             // For permanent failures, mark as incomplete and store the error message
             // We'll throw an error after the wait loop exits
             waitComplete = false;
+
             return true; // Return true to exit wait loop
           }
 
@@ -498,6 +517,7 @@ class KubernetesTaskRunner {
                 message = `Pod ${podName} cannot be scheduled:\n${schedulingMessage}`;
                 CloudRunnerLogger.logWarning(message);
                 waitComplete = false;
+
                 return true; // Exit wait loop to throw error
               }
 
@@ -513,6 +533,7 @@ class KubernetesTaskRunner {
                 message = `Pod ${podName} failed to pull image. Check image availability and credentials.`;
                 CloudRunnerLogger.logWarning(message);
                 waitComplete = false;
+
                 return true; // Exit wait loop to throw error
               }
 
@@ -522,6 +543,7 @@ class KubernetesTaskRunner {
                 CloudRunnerLogger.log(
                   `Pod ${podName} is pulling image (check ${consecutivePendingCount}). This may take several minutes for large images.`,
                 );
+
                 // Don't increment consecutivePendingCount if we're actively pulling
                 consecutivePendingCount = Math.max(4, consecutivePendingCount - 1);
               }
@@ -542,6 +564,7 @@ class KubernetesTaskRunner {
 
             if (consecutivePendingCount >= maxPendingChecks) {
               message = `Pod ${podName} stuck in Pending state for too long (${consecutivePendingCount} checks). This indicates a scheduling problem.`;
+
               // Get events for context
               try {
                 const events = await kubeClient.listNamespacedEvent(namespace);
@@ -595,11 +618,9 @@ class KubernetesTaskRunner {
                     }
 
                     // Check if pod is assigned to a node
-                    if (podStatusDetails?.hostIP) {
-                      message += `\n\nPod assigned to node: ${podStatusDetails.hostIP}`;
-                    } else {
-                      message += `\n\nPod not yet assigned to a node (scheduling pending)`;
-                    }
+                    message += podStatusDetails?.hostIP
+                      ? `\n\nPod assigned to node: ${podStatusDetails.hostIP}`
+                      : `\n\nPod not yet assigned to a node (scheduling pending)`;
                   }
 
                   // Check node resources if pod is assigned
@@ -612,7 +633,6 @@ class KubernetesTaskRunner {
                       );
                       if (assignedNode?.status && assignedNode.metadata?.name) {
                         const allocatable = assignedNode.status.allocatable || {};
-                        const capacity = assignedNode.status.capacity || {};
                         message += `\n\nNode Resources (${assignedNode.metadata.name}):\n  Allocatable CPU: ${
                           allocatable.cpu || 'unknown'
                         }\n  Allocatable Memory: ${allocatable.memory || 'unknown'}\n  Allocatable Ephemeral Storage: ${
@@ -627,11 +647,11 @@ class KubernetesTaskRunner {
                           message += `\n  Node Taints: ${taints}`;
                         }
                       }
-                    } catch (nodeError) {
+                    } catch {
                       // Ignore node check errors
                     }
                   }
-                } catch (podStatusError) {
+                } catch {
                   // Ignore pod status fetch errors
                 }
               } catch {
@@ -639,6 +659,7 @@ class KubernetesTaskRunner {
               }
               CloudRunnerLogger.logWarning(message);
               waitComplete = false;
+
               return true; // Exit wait loop to throw error
             }
 
@@ -706,7 +727,7 @@ class KubernetesTaskRunner {
         }
 
         CloudRunnerLogger.logWarning(message);
-      } catch (statusError) {
+      } catch {
         message = `Pod ${podName} timed out and could not retrieve final status: ${waitError?.message || waitError}`;
         CloudRunnerLogger.logWarning(message);
       }
@@ -725,6 +746,7 @@ class KubernetesTaskRunner {
           CloudRunnerLogger.logWarning(
             `Pod ${podName} completed with phase ${finalPhase} before reaching Running state. Will attempt to retrieve logs.`,
           );
+
           return true; // Allow workflow to continue and try to get logs
         }
       } catch {

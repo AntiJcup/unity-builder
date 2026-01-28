@@ -165,7 +165,9 @@ class Kubernetes implements ProviderInterface {
       if (process.env['cloudRunnerTests'] === 'true') {
         try {
           CloudRunnerLogger.log('Cleaning up old images in k3d node before pulling new image...');
-          const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
+          const { CloudRunnerSystem: CloudRunnerSystemModule } = await import(
+            '../../services/core/cloud-runner-system'
+          );
 
           // Aggressive cleanup: remove stopped containers and non-Unity images
           // IMPORTANT: Preserve Unity images (unityci/editor) to avoid re-pulling the 3.9GB image
@@ -174,19 +176,16 @@ class Kubernetes implements ProviderInterface {
 
           for (const NODE of K3D_NODE_CONTAINERS) {
             // Remove all stopped containers (this frees runtime space but keeps images)
-            cleanupCommands.push(`docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`);
-            // Remove non-Unity images only (preserve unityci/editor images to avoid re-pulling 3.9GB)
-            // This is safe because we explicitly exclude Unity images from deletion
             cleanupCommands.push(
-              `docker exec ${NODE} sh -c "for img in \$(crictl images -q 2>/dev/null); do repo=\$(crictl inspecti \$img --format '{{.repo}}' 2>/dev/null || echo ''); if echo \"\$repo\" | grep -qvE 'unityci/editor|unity'; then crictl rmi \$img 2>/dev/null || true; fi; done" || true`,
+              `docker exec ${NODE} sh -c "crictl rm --all 2>/dev/null || true" || true`,
+              `docker exec ${NODE} sh -c "for img in $(crictl images -q 2>/dev/null); do repo=$(crictl inspecti $img --format '{{.repo}}' 2>/dev/null || echo ''); if echo "$repo" | grep -qvE 'unityci/editor|unity'; then crictl rmi $img 2>/dev/null || true; fi; done" || true`,
+              `docker exec ${NODE} sh -c "crictl rmi --prune 2>/dev/null || true" || true`,
             );
-            // Clean up unused layers (prune should preserve referenced images)
-            cleanupCommands.push(`docker exec ${NODE} sh -c "crictl rmi --prune 2>/dev/null || true" || true`);
           }
 
           for (const cmd of cleanupCommands) {
             try {
-              await CloudRunnerSystem.Run(cmd, true, true);
+              await CloudRunnerSystemModule.Run(cmd, true, true);
             } catch (cmdError) {
               // Ignore individual command failures - cleanup is best effort
               CloudRunnerLogger.log(`Cleanup command failed (non-fatal): ${cmdError}`);
@@ -195,6 +194,7 @@ class Kubernetes implements ProviderInterface {
           CloudRunnerLogger.log('Cleanup completed (containers and non-Unity images removed, Unity images preserved)');
         } catch (cleanupError) {
           CloudRunnerLogger.logWarning(`Failed to cleanup images before job creation: ${cleanupError}`);
+
           // Continue anyway - image might already be cached
         }
       }
@@ -205,10 +205,12 @@ class Kubernetes implements ProviderInterface {
         // If not cached, try to ensure it's available to avoid disk pressure during pull
         if (process.env['cloudRunnerTests'] === 'true' && image.includes('unityci/editor')) {
           try {
-            const { CloudRunnerSystem } = await import('../../services/core/cloud-runner-system');
+            const { CloudRunnerSystem: CloudRunnerSystemModule2 } = await import(
+              '../../services/core/cloud-runner-system'
+            );
 
             // Check if image is cached on agent node (where pods run)
-            const agentImageCheck = await CloudRunnerSystem.Run(
+            const agentImageCheck = await CloudRunnerSystemModule2.Run(
               `docker exec k3d-unity-builder-agent-0 sh -c "crictl images | grep -q unityci/editor && echo 'cached' || echo 'not_cached'" || echo 'not_cached'`,
               true,
               true,
@@ -216,14 +218,14 @@ class Kubernetes implements ProviderInterface {
 
             if (agentImageCheck.includes('not_cached')) {
               // Check if image is on server node
-              const serverImageCheck = await CloudRunnerSystem.Run(
+              const serverImageCheck = await CloudRunnerSystemModule2.Run(
                 `docker exec k3d-unity-builder-server-0 sh -c "crictl images | grep -q unityci/editor && echo 'cached' || echo 'not_cached'" || echo 'not_cached'`,
                 true,
                 true,
               );
 
               // Check available disk space on agent node
-              const diskInfo = await CloudRunnerSystem.Run(
+              const diskInfo = await CloudRunnerSystemModule2.Run(
                 'docker exec k3d-unity-builder-agent-0 sh -c "df -h /var/lib/rancher/k3s 2>/dev/null | tail -1 || df -h / 2>/dev/null | tail -1 || echo unknown" || echo unknown',
                 true,
                 true,
@@ -248,9 +250,9 @@ class Kubernetes implements ProviderInterface {
               } else {
                 // Image not on either node - check if we have enough space to pull
                 // Extract available space from disk info
-                const availableSpaceMatch = diskInfo.match(/(\d+(?:\.\d+)?)\s*([GMK]?i?B)/i);
+                const availableSpaceMatch = diskInfo.match(/(\d+(?:\.\d+)?)\s*([gkm]?i?b)/i);
                 if (availableSpaceMatch) {
-                  const availableValue = parseFloat(availableSpaceMatch[1]);
+                  const availableValue = Number.parseFloat(availableSpaceMatch[1]);
                   const availableUnit = availableSpaceMatch[2].toUpperCase();
                   let availableGB = availableValue;
 

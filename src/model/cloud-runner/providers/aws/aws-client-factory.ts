@@ -27,7 +27,7 @@ export class AwsClientFactory {
     }
 
     // Return undefined to let AWS SDK use default credential chain
-    return undefined;
+    return;
   }
 
   static getCloudFormation(): CloudFormation {

@@ -52,9 +52,10 @@ describe('Cloud Runner pre-built S3 steps', () => {
           projectPath: 'test-project',
           unityVersion: UnityVersioning.determineUnityVersion('test-project', UnityVersioning.read('test-project')),
           targetPlatform: 'StandaloneLinux64',
-          cacheKey: cacheKey,
-          buildGuid: buildGuid,
+          cacheKey,
+          buildGuid,
           cloudRunnerDebug: true,
+
           // Use customJob to run a minimal job that sets up test data and then runs S3 hooks
           customJob: `
             - name: setup-test-data
@@ -139,7 +140,7 @@ describe('Cloud Runner pre-built S3 steps', () => {
             s3Endpoint = s3Endpoint.replace('host.docker.internal', 'localhost');
             CloudRunnerLogger.log(`Converted endpoint from host.docker.internal to localhost: ${s3Endpoint}`);
           }
-          const endpointArgs = s3Endpoint ? `--endpoint-url ${s3Endpoint}` : '';
+          const endpointArguments = s3Endpoint ? `--endpoint-url ${s3Endpoint}` : '';
 
           // Configure AWS credentials if available (needed for LocalStack)
           // LocalStack accepts any credentials, but they must be provided
@@ -179,7 +180,7 @@ describe('Cloud Runner pre-built S3 steps', () => {
 
           try {
             const results = await CloudRunnerSystem.RunAndReadLines(
-              `aws ${endpointArgs} s3 ls s3://${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/`,
+              `aws ${endpointArguments} s3 ls s3://${CloudRunner.buildParameters.awsStackName}/cloud-runner-cache/`,
             );
             CloudRunnerLogger.log(`S3 verification successful: ${results.join(`,`)}`);
           } catch (s3Error: any) {
@@ -188,6 +189,7 @@ describe('Cloud Runner pre-built S3 steps', () => {
             CloudRunnerLogger.log(
               `S3 verification failed (this is expected if upload failed during build): ${s3Error?.message || s3Error}`,
             );
+
             // Check if the error is due to missing credentials or connection issues
             const errorMessage = (s3Error?.message || s3Error?.toString() || '').toLowerCase();
             if (errorMessage.includes('invalidaccesskeyid') || errorMessage.includes('could not connect')) {

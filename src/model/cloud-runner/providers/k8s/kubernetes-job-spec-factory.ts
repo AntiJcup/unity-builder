@@ -68,6 +68,7 @@ class KubernetesJobSpecFactory {
         buildGuid,
       },
     };
+
     // Reduce TTL for tests to free up resources faster (default 9999s = ~2.8 hours)
     // For CI/test environments, use shorter TTL (300s = 5 minutes) to prevent disk pressure
     const jobTTL = process.env['cloudRunnerTests'] === 'true' ? 300 : 9999;
@@ -116,9 +117,10 @@ class KubernetesJobSpecFactory {
                   // For main build containers, use the configured resources
                   const memoryMB = Number.parseInt(buildParameters.containerMemory);
                   const cpuMB = Number.parseInt(buildParameters.containerCpu);
+
                   return {
-                    memory: !isNaN(memoryMB) && memoryMB > 0 ? `${memoryMB / 1024}G` : '750M',
-                    cpu: !isNaN(cpuMB) && cpuMB > 0 ? `${cpuMB / 1024}` : '1',
+                    memory: !Number.isNaN(memoryMB) && memoryMB > 0 ? `${memoryMB / 1024}G` : '750M',
+                    cpu: !Number.isNaN(cpuMB) && cpuMB > 0 ? `${cpuMB / 1024}` : '1',
                   };
                 })(),
               },
@@ -163,6 +165,7 @@ class KubernetesJobSpecFactory {
             },
           ],
           restartPolicy: 'Never',
+
           // Add tolerations for CI/test environments to allow scheduling even with disk pressure
           // This is acceptable for CI where we aggressively clean up disk space
           tolerations: [
@@ -196,6 +199,7 @@ class KubernetesJobSpecFactory {
       // Only set ephemeral-storage request for production builds
       job.spec.template.spec.containers[0].resources.requests[`ephemeral-storage`] = '2Gi';
     }
+
     // For tests, don't set ephemeral-storage request - let Kubernetes use available space
 
     return job;

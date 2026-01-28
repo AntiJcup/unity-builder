@@ -611,28 +611,30 @@ jobs:
           rm -rf ./cloud-runner-cache/* || true
           docker system prune -f || true
           df -h
-      # SKIP: cloud-runner-environment test requires full CloudFormation support (VPC, EFS, ECS, IAM)
-      # which LocalStack Community edition doesn't fully support. This test is validated by K8s provider tests.
-      # Uncomment below to run with LocalStack Pro or real AWS credentials.
-      # - name: Run cloud-runner-environment test
-      #   timeout-minutes: 30
-      #   run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
-      #   env:
-      #     UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-      #     UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-      #     UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-      #     PROJECT_PATH: test-project
-      #     TARGET_PLATFORM: StandaloneWindows64
-      #     cloudRunnerTests: true
-      #     versioning: None
-      #     KUBE_STORAGE_CLASS: local-path
-      #     PROVIDER_STRATEGY: aws
-      #     AWS_ACCESS_KEY_ID: test
-      #     AWS_SECRET_ACCESS_KEY: test
-      #     AWS_ENDPOINT: http://localhost:4566
-      #     AWS_ENDPOINT_URL: http://localhost:4566
-      #     GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
-      #     GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Run cloud-runner-environment test (AWS provider)
+        timeout-minutes: 30
+        run: yarn run test "cloud-runner-environment" --detectOpenHandles --forceExit --runInBand
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          PROJECT_PATH: test-project
+          TARGET_PLATFORM: StandaloneWindows64
+          cloudRunnerTests: true
+          versioning: None
+          KUBE_STORAGE_CLASS: local-path
+          PROVIDER_STRATEGY: aws
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
+          GIT_PRIVATE_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PRIVATE_TOKEN }}
+      - name: Clean up disk space
+        run: |
+          rm -rf ./cloud-runner-cache/* || true
+          docker system prune -f || true
+          df -h
       - name: Run cloud-runner-s3-steps test (AWS provider)
         timeout-minutes: 30
         run: yarn run test "cloud-runner-s3-steps" --detectOpenHandles --forceExit --runInBand

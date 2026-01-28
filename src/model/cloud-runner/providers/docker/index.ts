@@ -137,6 +137,7 @@ class LocalDockerCloudRunner implements ProviderInterface {
 
     // core.info(JSON.stringify({ workspace, actionFolder, ...this.buildParameters, ...content }, undefined, 4));
     const entrypointFilePath = `start.sh`;
+
     // Use #!/bin/sh for POSIX compatibility (Alpine-based images like rclone/rclone don't have bash)
     const fileContents = `#!/bin/sh
 set -e

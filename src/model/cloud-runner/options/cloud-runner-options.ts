@@ -74,6 +74,14 @@ class CloudRunnerOptions {
     return CloudRunnerOptions.getInput('githubRepoName') || CloudRunnerOptions.githubRepo?.split(`/`)[1] || '';
   }
 
+  static get cloudRunnerRepoName(): string {
+    return CloudRunnerOptions.getInput('cloudRunnerRepoName') || 'game-ci/unity-builder';
+  }
+
+  static get cloneDepth(): string {
+    return CloudRunnerOptions.getInput('cloneDepth') || '50';
+  }
+
   static get finalHooks(): string[] {
     return CloudRunnerOptions.getInput('finalHooks')?.split(',') || [];
   }

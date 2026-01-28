@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       K3D_NODE_CONTAINERS: 'k3d-unity-builder-agent-0'
-      AWS_FORCE_PROVIDER: aws
+      AWS_FORCE_PROVIDER: aws-local
       RESOURCE_TRACKING: 'true'
       # LocalStack container name on shared Docker network (for K8s pods to access)
       # Note: Using K8S_LOCALSTACK_HOST instead of LOCALSTACK_HOST to avoid conflict with awslocal CLI

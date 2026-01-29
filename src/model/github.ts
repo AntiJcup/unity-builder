@@ -166,10 +166,11 @@ class GitHub {
       core.info(JSON.stringify(workflows));
       throw new Error(`no workflow with name "${GitHub.asyncChecksApiWorkflowName}"`);
     }
-    await GitHub.octokitPAT.request(`POST /repos/{owner}/{repo}/actions/workflows/{workflowId}/dispatches`, {
+    await GitHub.octokitPAT.request(`POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, {
       owner: GitHub.owner,
       repo: GitHub.repo,
-      workflowId: selectedId,
+      // eslint-disable-next-line camelcase
+      workflow_id: selectedId,
       ref: CloudRunnerOptions.branch,
       inputs: {
         checksObject: JSON.stringify({ data, mode }),
@@ -200,10 +201,11 @@ class GitHub {
           core.info(JSON.stringify(workflows));
           throw new Error(`no workflow with name "${GitHub.asyncChecksApiWorkflowName}"`);
         }
-        await GitHub.octokitPAT.request(`POST /repos/{owner}/{repo}/actions/workflows/{workflowId}/dispatches`, {
+        await GitHub.octokitPAT.request(`POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, {
           owner: GitHub.owner,
           repo: GitHub.repo,
-          workflowId: selectedId,
+          // eslint-disable-next-line camelcase
+          workflow_id: selectedId,
           ref: CloudRunnerOptions.branch,
           inputs: {
             buildGuid: CloudRunner.buildParameters.buildGuid,
@@ -213,6 +215,10 @@ class GitHub {
     } catch {
       core.info(`github workflow complete hook not found`);
     }
+  }
+
+  public static async getCheckStatus() {
+    return await GitHub.octokitDefaultToken.request(`GET /repos/{owner}/{repo}/check-runs/{check_run_id}`);
   }
 }
 

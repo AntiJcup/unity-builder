@@ -55,22 +55,12 @@ class Docker {
     if (!existsSync(githubHome)) mkdirSync(githubHome);
     const githubWorkflow = path.join(runnerTempPath, '_github_workflow');
     if (!existsSync(githubWorkflow)) mkdirSync(githubWorkflow);
-
-    // Alpine-based images (alpine, rclone/rclone, etc.) don't have /bin/bash, only /bin/sh
-    const isAlpineBasedImage = image === 'alpine' || image.startsWith('rclone/');
-    const commandPrefix = isAlpineBasedImage ? `/bin/sh` : `/bin/bash`;
-
-    // Check if host.docker.internal is needed (for LocalStack access from containers)
-    // Add host mapping if any environment variable contains host.docker.internal
-    const environmentVariableString = ImageEnvironmentFactory.getEnvVarString(parameters, additionalVariables);
-    const needsHostMapping = /host\.docker\.internal/i.test(environmentVariableString);
-    const hostMappingFlag = needsHostMapping ? `--add-host=host.docker.internal:host-gateway` : '';
+    const commandPrefix = image === `alpine` ? `/bin/sh` : `/bin/bash`;
 
     return `docker run \
             --workdir ${dockerWorkspacePath} \
             --rm \
-            ${hostMappingFlag} \
-            ${environmentVariableString} \
+            ${ImageEnvironmentFactory.getEnvVarString(parameters, additionalVariables)} \
             --env GITHUB_WORKSPACE=${dockerWorkspacePath} \
             --env GIT_CONFIG_EXTENSIONS \
             ${gitPrivateToken ? `--env GIT_PRIVATE_TOKEN="${gitPrivateToken}"` : ''} \

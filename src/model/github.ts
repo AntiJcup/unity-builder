@@ -3,7 +3,6 @@ import CloudRunner from './cloud-runner/cloud-runner';
 import CloudRunnerOptions from './cloud-runner/options/cloud-runner-options';
 import * as core from '@actions/core';
 import { Octokit } from '@octokit/core';
-import fetch from 'node-fetch';
 
 class GitHub {
   private static readonly asyncChecksApiWorkflowName = `Async Checks API`;
@@ -16,13 +15,11 @@ class GitHub {
   private static get octokitDefaultToken() {
     return new Octokit({
       auth: process.env.GITHUB_TOKEN,
-      request: { fetch },
     });
   }
   private static get octokitPAT() {
     return new Octokit({
       auth: CloudRunner.buildParameters.gitPrivateToken,
-      request: { fetch },
     });
   }
   private static get sha() {

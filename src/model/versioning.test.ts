@@ -35,8 +35,7 @@ describe('Versioning', () => {
     });
   });
 
-  const maybeDescribe = process.platform === 'win32' ? describe.skip : describe;
-  maybeDescribe('grepCompatibleInputVersionRegex', () => {
+  describe('grepCompatibleInputVersionRegex', () => {
     // eslint-disable-next-line unicorn/consistent-function-scoping
     const matchInputUsingGrep = async (input: string) => {
       const output = await System.run('sh', undefined, {

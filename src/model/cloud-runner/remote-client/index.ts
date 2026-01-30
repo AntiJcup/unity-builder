@@ -322,8 +322,15 @@ export class RemoteClient {
 
     // Ensure refs exist (tags and PR refs)
     await CloudRunnerSystem.Run(`git fetch --all --tags || true`);
-    if ((CloudRunner.buildParameters.branch || '').startsWith('pull/')) {
-      await CloudRunnerSystem.Run(`git fetch origin +refs/pull/*:refs/remotes/origin/pull/* || true`);
+    const branchForPrFetch = CloudRunner.buildParameters.branch || '';
+    if (branchForPrFetch.startsWith('pull/')) {
+      // Extract PR number and fetch only that specific ref (e.g., pull/731/merge -> 731)
+      const prNumber = branchForPrFetch.split('/')[1];
+      if (prNumber) {
+        await CloudRunnerSystem.Run(
+          `git fetch origin +refs/pull/${prNumber}/merge:refs/remotes/origin/pull/${prNumber}/merge +refs/pull/${prNumber}/head:refs/remotes/origin/pull/${prNumber}/head || true`,
+        );
+      }
     }
     const targetSha = CloudRunner.buildParameters.gitSha;
     const targetBranch = CloudRunner.buildParameters.branch;
@@ -459,8 +466,15 @@ export class RemoteClient {
       CloudRunnerLogger.log(`Retained Workspace Already Exists!`);
       process.chdir(CloudRunnerFolders.ToLinuxFolder(CloudRunnerFolders.repoPathAbsolute));
       await CloudRunnerSystem.Run(`git fetch --all --tags || true`);
-      if ((CloudRunner.buildParameters.branch || '').startsWith('pull/')) {
-        await CloudRunnerSystem.Run(`git fetch origin +refs/pull/*:refs/remotes/origin/pull/* || true`);
+      const retainedBranchForPrFetch = CloudRunner.buildParameters.branch || '';
+      if (retainedBranchForPrFetch.startsWith('pull/')) {
+        // Extract PR number and fetch only that specific ref (e.g., pull/731/merge -> 731)
+        const prNumber = retainedBranchForPrFetch.split('/')[1];
+        if (prNumber) {
+          await CloudRunnerSystem.Run(
+            `git fetch origin +refs/pull/${prNumber}/merge:refs/remotes/origin/pull/${prNumber}/merge +refs/pull/${prNumber}/head:refs/remotes/origin/pull/${prNumber}/head || true`,
+          );
+        }
       }
       await CloudRunnerSystem.Run(`git lfs pull`);
       await CloudRunnerSystem.Run(`git lfs checkout || true`);

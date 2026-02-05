@@ -135,10 +135,6 @@ class CloudRunnerOptions {
     return CloudRunnerOptions.getInput('containerMemory') || `3072`;
   }
 
-  static get containerNamespace(): string {
-    return CloudRunnerOptions.getInput('containerNamespace') || `default`;
-  }
-
   static get customJob(): string {
     return CloudRunnerOptions.getInput('customJob') || '';
   }

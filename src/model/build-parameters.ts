@@ -59,7 +59,6 @@ class BuildParameters {
   public kubeConfig!: string;
   public containerMemory!: string;
   public containerCpu!: string;
-  public containerNamespace!: string;
   public kubeVolumeSize!: string;
   public kubeVolume!: string;
   public kubeStorageClass!: string;
@@ -188,7 +187,6 @@ class BuildParameters {
       kubeConfig: CloudRunnerOptions.kubeConfig,
       containerMemory: CloudRunnerOptions.containerMemory,
       containerCpu: CloudRunnerOptions.containerCpu,
-      containerNamespace: CloudRunnerOptions.containerNamespace,
       kubeVolumeSize: CloudRunnerOptions.kubeVolumeSize,
       kubeVolume: CloudRunnerOptions.kubeVolume,
       postBuildContainerHooks: CloudRunnerOptions.postBuildContainerHooks,
